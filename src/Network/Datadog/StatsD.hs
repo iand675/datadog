@@ -1,27 +1,35 @@
+{-| DogStatsD accepts custom application metrics points over UDP, and then periodically aggregates and forwards the metrics to Datadog, where they can be graphed on dashboards. The data is sent by using a client library such as this one that communicates with a DogStatsD server. -}
+
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
-module Datadog.StatsD (
-  MetricName,
-  Tag,
-  tag,
-  MetricType(..),
-  ToMetricValue,
-  metric,
-  Metric,
-  value,
-  Priority(..),
-  AlertType(..),
-  event,
-  Event,
+module Network.Datadog.StatsD (
+  -- * Client interface
   DogStatsSettings(..),
   defaultSettings,
   withDogStatsD,
-  StatsClient(Dummy),
   send,
+  -- * Data supported by DogStatsD 
+  metric,
+  Metric,
+  MetricName(..),
+  MetricType(..),
+  event,
+  Event,
+  serviceCheck,
+  ServiceCheck,
+  ServiceCheckStatus(..),
+  ToStatsD,
+  -- * Optional fields
+  Tag,
+  tag,
+  ToMetricValue,
+  value,
+  Priority(..),
+  AlertType(..),
   HasName(..),
   HasSampleRate(..),
   HasType'(..),
@@ -36,7 +44,10 @@ module Datadog.StatsD (
   HasAlertType(..),
   HasHost(..),
   HasPort(..),
-  ToStatsD
+  HasStatus(..),
+  HasMessage(..),
+  -- * Dummy client
+  StatsClient(Dummy)
 ) where
 import Control.Exception (bracket)
 import Control.Lens
@@ -54,12 +65,15 @@ import qualified Data.Foldable as F
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Clock
+import Data.Time.Clock.POSIX
 import Data.Time.Format
 import Data.Text.Encoding (encodeUtf8)
 import Data.ByteString.Short hiding (empty)
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import System.IO (hClose, hSetBuffering, BufferMode(LineBuffering), IOMode(WriteMode), Handle)
--- import System.Locale
+
+epochTime :: UTCTime -> Int
+epochTime = round . utcTimeToPOSIXSeconds
 
 newtype MetricName = MetricName { fromMetricName :: Text }
 
@@ -109,6 +123,19 @@ instance ToMetricValue Double where
 metric :: (ToMetricValue a) => MetricName -> MetricType -> a -> Metric
 metric n t v = Metric n 1 t (encodeValue v) []
 
+-- | 'Metric'
+--
+-- The fields accessible through corresponding lenses are:
+--
+-- * 'name' @::@ 'MetricName'
+--
+-- * 'sampleRate' @::@ 'Double'
+--
+-- * 'type'' @::@ 'MetricType'
+--
+-- * 'value' @::@ 'ToMetricValue' @a => a@
+--
+-- * 'tags' @::@ @[@'Tag'@]@
 data Metric = Metric
   { metricName       :: !MetricName
   , metricSampleRate :: {-# UNPACK #-} !Double
@@ -135,7 +162,6 @@ renderMetric (Metric n sr t v ts) = do
   unit
   formatRate
   formatTags
-  appendChar7 '\n'
   where
     unit = case t of
       Gauge     -> appendChar7 'g'
@@ -155,6 +181,28 @@ data AlertType = Error | Warning | Info | Success
 event :: Text -> Text -> Event
 event t d = Event t d Nothing Nothing Nothing Nothing Nothing Nothing []
 
+-- | 'Event'
+--
+-- The fields accessible through corresponding lenses are:
+--
+-- * 'title' @::@ 'Text'
+--
+-- * 'text' @::@ 'Text'
+--
+-- * 'dateHappened' @::@ 'Maybe' 'UTCTime'
+--
+-- * 'hostname' @::@ 'Maybe' 'Text'
+--
+-- * 'aggregationKey' @::@ 'Maybe' 'Text'
+--
+-- * 'priority' @::@ 'Maybe' 'Priority'
+--
+-- * 'sourceTypeName' @::@ 'Maybe' 'Text'
+--
+-- * 'alertType' @::@ 'Maybe' 'AlertType'
+--
+-- * 'tags' @::@ @[@'Tag'@]@
+--
 data Event = Event
   { eventTitle          :: {-# UNPACK #-} !Text
   , eventText           :: {-# UNPACK #-} !Text
@@ -190,7 +238,6 @@ renderEvent e = do
   sourceType
   alert
   formatTags
-  appendChar7 '\n'
   where
     escapedTitle = encodeUtf8 $ escapeEventContents $ eventTitle e
     escapedText = encodeUtf8 $ escapeEventContents $ eventText e
@@ -200,7 +247,7 @@ renderEvent e = do
     -- TODO figure out the actual format that dateHappened values are supposed to have.
     happened = F.forM_ (eventDateHappened e) $ \h -> do
       appendBS7 "|d:"
-      appendText $ cleanMetricText $ T.pack $ formatTime defaultTimeLocale rfc822DateFormat h
+      appendDecimalSignedInt $ epochTime h
     formatHostname = makeField 'h' $ cleanTextValue eventHostname
     aggregation = makeField 'k' $ cleanTextValue eventAggregationKey
     formatPriority = F.forM_ (eventPriority e) $ \p -> do
@@ -222,7 +269,41 @@ renderEvent e = do
         appendBS7 "|#"
         sequence_ $ intersperse (appendChar7 ',') $ map fromTag ts
 
--- | Convert an 'Event' or 'Metric' to their wire format.
+data ServiceCheckStatus = ServiceOk | ServiceWarning | ServiceCritical | ServiceUnknown
+  deriving (Read, Show, Eq, Ord, Enum)
+
+-- | 'ServiceCheck'
+--
+-- The fields accessible through corresponding lenses are:
+--
+-- * 'name' @::@ 'Text'
+--
+-- * 'status' @::@ 'ServiceCheckStatus'
+--
+-- * 'message' @::@ 'Maybe' 'Text'
+--
+-- * 'dateHappened' @::@ 'Maybe' 'UTCTime'
+--
+-- * 'hostname' @::@ 'Maybe' 'Text'
+--
+-- * 'tags' @::@ @[@'Tag'@]@
+data ServiceCheck = ServiceCheck
+  { serviceCheckName         :: {-# UNPACK #-} !Text
+  , serviceCheckStatus       :: !ServiceCheckStatus
+  , serviceCheckMessage      :: !(Maybe Text)
+  , serviceCheckDateHappened :: !(Maybe UTCTime)
+  , serviceCheckHostname     :: !(Maybe Text)
+  , serviceCheckTags         :: ![Tag]
+  }
+
+makeFields ''ServiceCheck
+
+serviceCheck :: Text -- ^ name
+             -> ServiceCheckStatus
+             -> ServiceCheck
+serviceCheck n s = ServiceCheck n s Nothing Nothing Nothing []
+
+-- | Convert an 'Event', 'Metric', or 'StatusCheck' to their wire format.
 class ToStatsD a where
   toStatsD :: a -> Utf8Builder ()
 
@@ -231,6 +312,25 @@ instance ToStatsD Metric where
 
 instance ToStatsD Event where
   toStatsD = renderEvent
+
+instance ToStatsD ServiceCheck where
+  toStatsD check = do
+    appendBS7 "_sc|"
+    appendText $ cleanMetricText $ check ^. name
+    appendChar7 '|'
+    appendDecimalSignedInt $ fromEnum $ check ^. status
+    F.forM_ (check ^. message) $ \msg ->
+      appendBS7 "|m:" >> appendText (cleanMetricText msg)
+    F.forM_ (check ^. dateHappened) $ \ts -> do
+      appendBS7 "|d:"
+      appendDecimalSignedInt $ epochTime ts
+    F.forM_ (check ^. hostname) $ \hn ->
+      appendBS7 "|h:" >> appendText (cleanMetricText hn)
+    case check ^. tags of
+      [] -> return ()
+      ts -> do
+        appendBS7 "|#"
+        sequence_ $ intersperse (appendChar7 ',') $ map fromTag ts
 
 data DogStatsSettings = DogStatsSettings
   { dogStatsSettingsHost     :: HostName -- ^ The hostname or IP of the DogStatsD server (default: 127.0.0.1)
@@ -275,7 +375,7 @@ data StatsClient = StatsClient
                    }
                  | Dummy -- ^ Just drops all stats.
 
--- | Send a 'Metric' or 'Event' or event to the DogStatsD server.
+-- | Send a 'Metric', 'Event', or 'StatusCheck' to the DogStatsD server.
 --
 -- Since UDP is used to send the events,
 -- there is no ack that sent values are successfully dealt with.
@@ -283,8 +383,9 @@ data StatsClient = StatsClient
 -- > withDogStatsD defaultSettings $ \client -> do
 -- >   send client $ event "Wombat attack" "A host of mighty wombats has breached the gates"
 -- >   send client $ metric "wombat.force_count" Gauge (9001 :: Int)
+-- >   send client $ serviceCheck "Wombat Radar" ServiceOk
 send :: (MonadBase IO m, ToStatsD v) => StatsClient -> v -> m ()
-send (StatsClient _ r) v = liftBase $ reaperAdd r $ toStatsD v
+send (StatsClient _ r) v = liftBase $ reaperAdd r (toStatsD v >> appendChar7 '\n')
 send Dummy _ = return ()
 {-# INLINEABLE send #-}
 

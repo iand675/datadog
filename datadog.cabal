@@ -3,7 +3,7 @@
 
 name:                datadog
 version:             0.1.0.0
-synopsis:            Datadog client for Haskell
+synopsis:            Datadog client for Haskell. Currently only StatsD supported, other support forthcoming.
 -- description:         
 homepage:            https://github.com/iand675/datadog
 license:             MIT
@@ -17,7 +17,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Datadog.StatsD
+  exposed-modules:     Network.Datadog.StatsD
                        -- Datadog.Metrics,
                        -- Datadog,
                        -- Datadog.Wai
