@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                datadog
-version:             0.1.0.0
+version:             0.1.0.1
 synopsis:            Datadog client for Haskell. Currently only StatsD supported, other support forthcoming.
 -- description:         
 homepage:            https://github.com/iand675/datadog

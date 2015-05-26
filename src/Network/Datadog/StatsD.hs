@@ -49,6 +49,7 @@ module Network.Datadog.StatsD (
   -- * Dummy client
   StatsClient(Dummy)
 ) where
+import Control.Applicative ((<$>))
 import Control.Exception (bracket)
 import Control.Lens
 import Control.Monad.Base
