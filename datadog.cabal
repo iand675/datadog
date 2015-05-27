@@ -38,3 +38,17 @@ library
                        transformers-base
   hs-source-dirs:      src
   default-language:    Haskell2010
+
+test-suite datadog-test
+  type:                exitcode-stdio-1.0
+  main-is:             TestAll.hs
+  build-depends:       base,
+                       datadog,
+                       tasty,
+                       tasty-hunit,
+                       network,
+                       text
+  hs-source-dirs:      test
+  default-language:    Haskell2010
+  ghc-options:         -Wall -O3 -threaded -rtsopts -with-rtsopts=-N
+
