@@ -54,9 +54,10 @@ module Network.Datadog.Monitor
 
 import Control.Arrow
 import Control.Exception
-import Control.Monad (mzero, void)
+import Control.Monad (void)
 
 import Data.Aeson
+import Data.Aeson.Types (modifyFailure, typeMismatch)
 import qualified Data.HashMap.Strict as Data.HashMap
 import Data.List (intercalate)
 import Data.Maybe
@@ -67,6 +68,7 @@ import Data.Time.Clock.POSIX
 import Network.HTTP.Conduit
 
 import Network.Datadog
+import Network.Datadog.Internal
 
 
 -- | Each monitor is of a specific type, which determines what sort of check
@@ -90,7 +92,8 @@ instance ToJSON MonitorType where
 instance FromJSON MonitorType where
   parseJSON (Data.Aeson.String "metric alert") = return MetricAlert
   parseJSON (Data.Aeson.String "service check") = return ServiceCheck
-  parseJSON _ = mzero
+  parseJSON (Data.Aeson.String s) = fail $ "MonitorType: String \"" ++ unpack s ++ "\" is not a valid MonitorType"
+  parseJSON a = modifyFailure ("MonitorType: " ++) $ typeMismatch "String" a
 
 
 -- | Advanced configuration parameters for a monitor.
@@ -112,7 +115,8 @@ instance ToJSON MonitorOptions where
                                                   ,("notify_audit", Bool (moNotifyAudit options))]
 
 instance FromJSON MonitorOptions where
-  parseJSON (Object v) = MonitorOptions <$>
+  parseJSON (Object v) = modifyFailure ("MonitorOptions: " ++) $
+                         MonitorOptions <$>
                          v .:? "silenced" .!= Data.HashMap.empty <*>
                          v .:? "notify_no_data" .!= False <*>
                          v .:? "no_data_timeframe" .!= Nothing <*>
@@ -120,7 +124,7 @@ instance FromJSON MonitorOptions where
                          v .:? "renotify_interval" .!= Nothing <*>
                          v .:? "escalation_message" .!= "" <*>
                          v .:? "notify_audit" .!= False
-  parseJSON _ = mzero
+  parseJSON a = modifyFailure ("MonitorOptions: " ++) $ typeMismatch "Object" a
 
 -- | Creates the most basic specification required by a monitor, containing the
 -- type of monitor and the query string used to detect the monitor's state.
@@ -260,13 +264,14 @@ instance ToJSON MonitorSpec where
                                   ++ maybe [] (\a -> ["message" .=  a]) (msMessage ms))
 
 instance FromJSON MonitorSpec where
-  parseJSON (Object v) = MonitorSpec <$>
+  parseJSON (Object v) = modifyFailure ("MonitorSpec: " ++) $
+                         MonitorSpec <$>
                          v .: "type" <*>
                          v .: "query" <*>
                          v .:? "name" .!= Nothing <*>
                          v .:? "message" .!= Nothing <*>
                          v .:? "options" .!= defaultMonitorOptions
-  parseJSON _ = mzero
+  parseJSON a = modifyFailure ("MonitorSpec: " ++) $ typeMismatch "Object" a
 
 
 -- | Creates the most basic specification required by a monitor, containing the
@@ -303,8 +308,9 @@ instance ToJSON Monitor where
           (Object newmap) = object ["id" .= mId monitor]
 
 instance FromJSON Monitor where
-  parseJSON (Object v) = Monitor <$> v .: "id" <*> parseJSON (Object v)
-  parseJSON _ = mzero
+  parseJSON (Object v) = modifyFailure ("Monitor: " ++ ) $
+                         Monitor <$> v .: "id" <*> parseJSON (Object v)
+  parseJSON a = modifyFailure ("Monitor: " ++) $ typeMismatch "Object" a
 
 
 -- | Create a new monitor in Datadog matching a specification.
@@ -317,7 +323,7 @@ createMonitor (Environment keys manager) monitorspec = do
                         , requestBody = RequestBodyLBS (encode monitorspec)
                         }
   resp <- httpLbs request manager
-  maybe (throwIO (AssertionFailed "Datadog Library could not decode a Monitor")) return $ decode $ responseBody resp
+  decodeDatadog "createMonitor" $ responseBody resp
 
 
 -- | Load a monitor from Datadog by its ID.
@@ -326,7 +332,7 @@ loadMonitor (Environment keys manager) monitorId = do
   request <- parseUrl $ "https://app.datadoghq.com/api/v1/monitor/" ++ show monitorId
              ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
   resp <- httpLbs request manager
-  maybe (throwIO (AssertionFailed "Datadog Library could not decode an Event")) return $ decode $ responseBody resp
+  decodeDatadog "loadMonitor" $ responseBody resp
 
 
 -- | Sync a monitor with Datadog.
@@ -347,7 +353,7 @@ updateMonitor (Environment keys manager) mid mspec = do
                         , requestBody = RequestBodyLBS (encode mspec)
                         }
   resp <- httpLbs request manager
-  maybe (throwIO (AssertionFailed "Datadog Library could not decode an Event")) return $ decode $ responseBody resp
+  decodeDatadog "updateMonitor" $ responseBody resp
 
 
 -- | Delete a monitor from Datadog.
@@ -379,7 +385,7 @@ loadMonitors (Environment keys manager) tags = do
              ++ "&application_key=" ++ appKey keys
              ++ if null tags then "" else "&tags=" ++ intercalate "," (map unpack tags)
   resp <- httpLbs request manager
-  maybe (throwIO (AssertionFailed "Datadog Library could not decode Monitors")) return $ decode (responseBody resp)
+  decodeDatadog "loadMonitors" $ responseBody resp
 
 
 -- | Prevent all monitors from notifying indefinitely.

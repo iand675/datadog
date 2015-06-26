@@ -19,19 +19,14 @@ module Network.Datadog.Event
 ) where
 
 
-import Control.Exception
-import Control.Monad (mzero)
-
 import Data.Aeson hiding (Error, Success)
+import Data.Aeson.Types (modifyFailure, typeMismatch)
 -- import qualified Data.Aeson (Result(Success))
-import Data.ByteString.Lazy (ByteString)
 import qualified Data.HashMap.Strict as Data.HashMap
 import Data.List (intercalate)
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.Text (Text, pack, unpack)
-import qualified Data.Text.Lazy (unpack)
-import Data.Text.Lazy.Encoding (decodeUtf8)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import Data.Vector (toList)
@@ -39,6 +34,7 @@ import Data.Vector (toList)
 import Network.HTTP.Conduit
 
 import Network.Datadog
+import Network.Datadog.Internal
 
 
 -- | A set of priorities used to denote the importance of an event.
@@ -57,7 +53,8 @@ instance ToJSON EventPriority where
 instance FromJSON EventPriority where
   parseJSON (Data.Aeson.String "normal") = return NormalPriority
   parseJSON (Data.Aeson.String "low") = return LowPriority
-  parseJSON _ = mzero
+  parseJSON (Data.Aeson.String s) = fail $ "EventPriority: String \"" ++ unpack s ++ "\" is not a valid EventPriority"
+  parseJSON a = modifyFailure ("EventPriority: " ++) $ typeMismatch "String" a
 
 
 -- | The failure levels for an alert.
@@ -84,7 +81,8 @@ instance FromJSON AlertType where
   parseJSON (Data.Aeson.String "warning") = return Warning
   parseJSON (Data.Aeson.String "info") = return Info
   parseJSON (Data.Aeson.String "success") = return Success
-  parseJSON _ = mzero
+  parseJSON (Data.Aeson.String s) = fail $ "AlertType: String \"" ++ unpack s ++ "\" is not a valid AlertType"
+  parseJSON a = modifyFailure ("AlertType: " ++) $ typeMismatch "String" a
 
 
 -- | A source from which an event may originate, recognized by Datadog.
@@ -143,7 +141,8 @@ instance FromJSON SourceType where
   parseJSON (Data.Aeson.String "bitbucket") = return BitBucket
   parseJSON (Data.Aeson.String "fabric") = return Fabric
   parseJSON (Data.Aeson.String "capistrano") = return Capistrano
-  parseJSON _ = mzero
+  parseJSON (Data.Aeson.String s) = fail $ "SourceType: String \"" ++ unpack s ++ "\" is not a valid SourceType"
+  parseJSON a = modifyFailure ("SourceType: " ++) $ typeMismatch "String" a
 
 
 -- | Details that describe an event.
@@ -173,7 +172,8 @@ instance ToJSON EventSpec where
                      )
 
 instance FromJSON EventSpec where
-  parseJSON (Object v) = EventSpec <$>
+  parseJSON (Object v) = modifyFailure ("EventSpec: " ++) $
+                         EventSpec <$>
                          v .: "title" <*>
                          v .: "text" <*>
                          (withScientific "Integer" (\t -> return (posixSecondsToUTCTime (fromIntegral (floor t :: Integer)))) =<< v .: "date_happened") <*>
@@ -182,7 +182,7 @@ instance FromJSON EventSpec where
                          (withArray "List" (fmap HashSet.fromList . mapM (withText "Text" return) . toList) =<< v .: "tags") <*>
                          v .:? "alert_type" .!= Info <*>
                          v .:? "source_type" .!= Nothing
-  parseJSON _ = mzero
+  parseJSON a = modifyFailure ("EventSpec: " ++) $ typeMismatch "Object" a
 
 
 -- | Creates the most basic description required for an event, containing the
@@ -217,34 +217,24 @@ instance ToJSON Event where
           (Object newmap) = object ["id" .= eId event]
 
 instance FromJSON Event where
-  parseJSON (Object v) = Event <$> v .: "id" <*> parseJSON (Object v)
-  parseJSON _ = mzero
+  parseJSON (Object v) = modifyFailure ("Event: " ++) $
+                         Event <$> v .: "id" <*> parseJSON (Object v)
+  parseJSON a = modifyFailure ("Event: " ++) $ typeMismatch "Object" a
 
 
 data WrappedEvent = WrappedEvent { wrappedEvent :: Event }
 
 instance FromJSON WrappedEvent where
-  parseJSON (Object v) = WrappedEvent <$> v .: "event"
-  parseJSON _ = mzero
+  parseJSON (Object v) = modifyFailure ("WrappedEvent: " ++) $
+                         WrappedEvent <$> v .: "event"
+  parseJSON a = modifyFailure ("WrappedEvent: " ++) $ typeMismatch "Object" a
 
 data WrappedEvents = WrappedEvents { wrappedEvents :: [Event] }
 
 instance FromJSON WrappedEvents where
-  parseJSON (Object v) = WrappedEvents <$> v .: "events"
-  parseJSON _ = mzero
-
-
-eventDecode :: ByteString -> IO Event
-eventDecode body = either (throwIO . AssertionFailed . failstring) (return . wrappedEvent)
-                   $ eitherDecode body
-  where failstring e = "Datadog Library could not decode an Event - " ++ e
-                       ++ " - " ++ Data.Text.Lazy.unpack (decodeUtf8 body)
-
-eventsDecode :: ByteString -> IO [Event]
-eventsDecode body = either (throwIO . AssertionFailed . failstring) (return . wrappedEvents)
-                   $ eitherDecode body
-  where failstring e = "Datadog Library could not decode Events - " ++ e
-                       ++ " - " ++ Data.Text.Lazy.unpack (decodeUtf8 body)
+  parseJSON (Object v) = modifyFailure ("WrappedEvents: " ++) $
+                         WrappedEvents <$> v .: "events"
+  parseJSON a = modifyFailure ("WrappedEvents: " ++) $ typeMismatch "Object" a
 
 
 -- | Store a new event in Datadog.
@@ -256,7 +246,7 @@ createEvent (Environment keys manager) eventDetails = do
                         , requestBody = RequestBodyLBS (encode eventDetails)
                         }
   resp <- httpLbs request manager
-  eventDecode $ responseBody resp
+  fmap wrappedEvent $ decodeDatadog "createEvent" $ responseBody resp
 
 
 -- | Load an event from Datadog by its ID.
@@ -265,7 +255,7 @@ loadEvent (Environment keys manager) eventId = do
   request <- parseUrl $ "https://app.datadoghq.com/api/v1/events/" ++ show eventId
              ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
   resp <- httpLbs request manager
-  eventDecode $ responseBody resp
+  fmap wrappedEvent $ decodeDatadog "loadEvent" $ responseBody resp
 
 
 -- | Query Datadog for events within a specific time range.
@@ -285,4 +275,4 @@ loadEvents (Environment keys manager) (start,end) priority tags = do
              ++ maybe "" (\a -> "&priority=" ++ show a) priority
              ++ if null tags then "" else "&tags=" ++ intercalate "," (map unpack tags)
   resp <- httpLbs request manager
-  eventsDecode $ responseBody resp
+  fmap wrappedEvents $ decodeDatadog "loadEvents" $ responseBody resp

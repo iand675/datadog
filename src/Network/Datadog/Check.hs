@@ -10,9 +10,10 @@ module Network.Datadog.Check
 ) where
 
 
-import Control.Monad (mzero, void)
+import Control.Monad (void)
 
 import Data.Aeson
+import Data.Aeson.Types (modifyFailure, typeMismatch)
 import Data.Text (Text, dropWhile, intercalate, tail, takeWhile)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
@@ -44,7 +45,8 @@ instance FromJSON CheckStatus where
   parseJSON (Number 1) = return CheckWarning
   parseJSON (Number 2) = return CheckCritical
   parseJSON (Number 3) = return CheckUnknown
-  parseJSON _ = mzero
+  parseJSON (Number n) = fail $ "CheckStatus: Number \"" ++ show n ++ "\" is not a valid CheckStatus"
+  parseJSON a = modifyFailure ("MonitorType: " ++) $ typeMismatch "Number" a
 
 
 -- | The result of running a check on some service.
@@ -73,7 +75,8 @@ instance ToJSON CheckResult where
                       ++ maybe [] (\a -> ["message" .= a]) (crMessage cr))
 
 instance FromJSON CheckResult where
-  parseJSON (Object v) = CheckResult <$>
+  parseJSON (Object v) = modifyFailure ("CheckResult: " ++) $
+                         CheckResult <$>
                          v .: "check" <*>
                          v .: "host_name" <*>
                          v .: "status" <*>
@@ -81,7 +84,7 @@ instance FromJSON CheckResult where
                          v .:? "message" .!= Nothing <*>
                          (map keyvalue <$> (v .: "tags"))
     where keyvalue a = (Data.Text.takeWhile (/=':') a, Data.Text.tail (Data.Text.dropWhile (/=':') a))
-  parseJSON _ = mzero
+  parseJSON a = modifyFailure ("CheckResult: " ++) $ typeMismatch "Object" a
 
 
 -- | Record the result of a check in Datadog.

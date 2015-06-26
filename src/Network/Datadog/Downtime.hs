@@ -18,15 +18,12 @@ module Network.Datadog.Downtime
 ) where
 
 
-import Control.Exception
-import Control.Monad (mzero, void)
+import Control.Monad (void)
 
 import Data.Aeson
-import Data.ByteString.Lazy (ByteString)
+import Data.Aeson.Types (modifyFailure, typeMismatch)
 import qualified Data.HashMap.Strict as Data.HashMap (union)
 import Data.Text (Text)
-import qualified Data.Text.Lazy (unpack)
-import Data.Text.Lazy.Encoding (decodeUtf8)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import qualified Data.Vector (head)
@@ -34,6 +31,7 @@ import qualified Data.Vector (head)
 import Network.HTTP.Conduit
 
 import Network.Datadog
+import Network.Datadog.Internal
 
 
 -- | A description of when downtime should occur.
@@ -55,12 +53,13 @@ instance ToJSON DowntimeSpec where
                      )
 
 instance FromJSON DowntimeSpec where
-  parseJSON (Object v) = DowntimeSpec <$>
+  parseJSON (Object v) = modifyFailure ("DowntimeSpec: " ++) $
+                         DowntimeSpec <$>
                          (withArray "Text" (parseJSON . Data.Vector.head) =<< v .: "scope") <*>
                          (maybe (return Nothing) (withScientific "Integer" (\t -> return (Just (posixSecondsToUTCTime (fromIntegral (floor t :: Integer)))))) =<< (v .:? "start")) <*>
                          (maybe (return Nothing) (withScientific "Integer" (\t -> return (Just (posixSecondsToUTCTime (fromIntegral (floor t :: Integer)))))) =<< (v .:? "end")) <*>
                          v .:? "message" .!= Nothing
-  parseJSON _ = mzero
+  parseJSON a = modifyFailure ("DowntimeSpec: " ++) $ typeMismatch "Object" a
 
 
 -- | Creates the most basic possible downtime specification, which just
@@ -89,21 +88,9 @@ instance ToJSON Downtime where
           (Object newmap) = object ["id" .= dId downtime]
 
 instance FromJSON Downtime where
-  parseJSON (Object v) = Downtime <$> v .: "id" <*> parseJSON (Object v)
-  parseJSON _ = mzero
-
-
-downtimeDecode :: ByteString -> IO Downtime
-downtimeDecode body = either (throwIO . AssertionFailed . failstring) return
-                   $ eitherDecode body
-  where failstring e = "Datadog Library could not decode a Downtime - " ++ e
-                       ++ " - " ++ Data.Text.Lazy.unpack (decodeUtf8 body)
-
-downtimesDecode :: ByteString -> IO [Downtime]
-downtimesDecode body = either (throwIO . AssertionFailed . failstring) return
-                   $ eitherDecode body
-  where failstring e = "Datadog Library could not decode Downtimes - " ++ e
-                       ++ " - " ++ Data.Text.Lazy.unpack (decodeUtf8 body)
+  parseJSON (Object v) = modifyFailure ("Downtime: " ++) $
+                         Downtime <$> v .: "id" <*> parseJSON (Object v)
+  parseJSON a = modifyFailure ("Downtime: " ++) $ typeMismatch "Object" a
 
 
 -- | Schedule a new downtime in Datadog.
@@ -116,7 +103,7 @@ scheduleDowntime (Environment keys manager) downtimeSpec = do
                         , requestBody = RequestBodyLBS (encode downtimeSpec)
                         }
   resp <- httpLbs request manager
-  downtimeDecode $ responseBody resp
+  decodeDatadog "scheduleDowntime" $ responseBody resp
 
 
 -- | Update the specification of a downtime in Datadog.
@@ -129,8 +116,7 @@ updateDowntime (Environment keys manager) did dspec = do
                         , requestBody = RequestBodyLBS (encode dspec)
                         }
   resp <- httpLbs request manager
-  maybe (throwIO (AssertionFailed "Datadog Library could not decode a Downtime (updateDowntime)")) return
-    $ decode $ responseBody resp
+  decodeDatadog "updateDowntime" $ responseBody resp
 
 
 -- | Cancel scheduled downtime in Datadog.
@@ -148,7 +134,7 @@ loadDowntime (Environment keys manager) downtimeId = do
   request <- parseUrl $ "https://app.datadoghq.com/api/v1/downtime/" ++ show downtimeId
              ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
   resp <- httpLbs request manager
-  downtimeDecode $ responseBody resp
+  decodeDatadog "loadDowntime" $ responseBody resp
 
 
 -- | Load all scheduled downtimes, optionally filtering for only downtimes that
@@ -159,4 +145,4 @@ loadDowntimes (Environment keys manager) active = do
              ++ "&application_key=" ++ appKey keys
              ++ if active then "&current_only=true" else []
   resp <- httpLbs request manager
-  downtimesDecode $ responseBody resp
+  decodeDatadog "loadDowntimes" $ responseBody resp
