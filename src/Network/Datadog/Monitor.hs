@@ -91,6 +91,8 @@ instance ToJSON MonitorType where
 
 instance FromJSON MonitorType where
   parseJSON (Data.Aeson.String "metric alert") = return MetricAlert
+  -- TODO figure out what "query alert" actually is
+  parseJSON (Data.Aeson.String "query alert") = return MetricAlert
   parseJSON (Data.Aeson.String "service check") = return ServiceCheck
   parseJSON (Data.Aeson.String s) = fail $ "MonitorType: String \"" ++ unpack s ++ "\" is not a valid MonitorType"
   parseJSON a = modifyFailure ("MonitorType: " ++) $ typeMismatch "String" a
