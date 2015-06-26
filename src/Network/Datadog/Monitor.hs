@@ -65,8 +65,6 @@ import Data.Text (Text, pack, unpack)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 
-import Network.HTTP.Conduit
-
 import Network.Datadog
 import Network.Datadog.Internal
 
@@ -317,24 +315,18 @@ instance FromJSON Monitor where
 
 -- | Create a new monitor in Datadog matching a specification.
 createMonitor :: Environment -> MonitorSpec -> IO Monitor
-createMonitor (Environment keys manager) monitorspec = do
-  initReq <- parseUrl $ "https://app.datadoghq.com/api/v1/monitor?api_key=" ++ apiKey keys
-             ++ "&application_key=" ++ appKey keys
-  let request = initReq { method = "POST"
-                        , requestHeaders = [("Content-type","application/json")]
-                        , requestBody = RequestBodyLBS (encode monitorspec)
-                        }
-  resp <- httpLbs request manager
-  decodeDatadog "createMonitor" $ responseBody resp
+createMonitor env monitorspec =
+  let path = "monitor"
+  in datadogHttp env path [] "POST" (Just $ encode monitorspec) >>=
+     decodeDatadog "createMonitor"
 
 
 -- | Load a monitor from Datadog by its ID.
 loadMonitor :: Environment -> MonitorId -> IO Monitor
-loadMonitor (Environment keys manager) monitorId = do
-  request <- parseUrl $ "https://app.datadoghq.com/api/v1/monitor/" ++ show monitorId
-             ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
-  resp <- httpLbs request manager
-  decodeDatadog "loadMonitor" $ responseBody resp
+loadMonitor env monitorId =
+  let path = "monitor/" ++ show monitorId
+  in datadogHttp env path [] "GET" Nothing >>=
+     decodeDatadog "loadMonitor"
 
 
 -- | Sync a monitor with Datadog.
@@ -347,15 +339,10 @@ loadMonitor (Environment keys manager) monitorId = do
 -- the time it was copied locally and when this function is called, those
 -- changes already made remotely will be overwritten by this change.
 updateMonitor :: Environment -> MonitorId -> MonitorSpec -> IO Monitor
-updateMonitor (Environment keys manager) mid mspec = do
-  initReq <- parseUrl $ "https://app.datadoghq.com/api/v1/monitor/" ++ show mid
-             ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
-  let request = initReq { method = "PUT"
-                        , requestHeaders = [("Content-type","application/json")]
-                        , requestBody = RequestBodyLBS (encode mspec)
-                        }
-  resp <- httpLbs request manager
-  decodeDatadog "updateMonitor" $ responseBody resp
+updateMonitor env monitorId mspec =
+  let path = "monitor/" ++ show monitorId
+  in datadogHttp env path [] "PUT" (Just $ encode mspec) >>=
+     decodeDatadog "updateMonitor"
 
 
 -- | Delete a monitor from Datadog.
@@ -364,11 +351,9 @@ updateMonitor (Environment keys manager) mid mspec = do
 -- however you can always create a new monitor using the deleted monitor's
 -- specification.
 deleteMonitor :: Environment -> MonitorId -> IO ()
-deleteMonitor (Environment keys manager) monitorId = do
-  initReq <- parseUrl $ "https://app.datadoghq.com/api/v1/monitor/" ++ show monitorId
-             ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
-  let request = initReq { method = "DELETE" }
-  void $ httpLbs request manager
+deleteMonitor env monitorId =
+  let path = "monitor/" ++ show monitorId
+  in void $ datadogHttp env path [] "DELETE" Nothing
 
 
 -- | Load monitors from Datadog.
@@ -382,27 +367,22 @@ loadMonitors :: Environment
              -> [Text]
              -- ^ Tags on which to filter the results
              -> IO [Monitor]
-loadMonitors (Environment keys manager) tags = do
-  request <- parseUrl $ "https://app.datadoghq.com/api/v1/monitor?api_key=" ++ apiKey keys
-             ++ "&application_key=" ++ appKey keys
-             ++ if null tags then "" else "&tags=" ++ intercalate "," (map unpack tags)
-  resp <- httpLbs request manager
-  decodeDatadog "loadMonitors" $ responseBody resp
+loadMonitors env tags =
+  let path = "monitor"
+      query = [("tags", intercalate "," (map unpack tags)) | not (null tags)]
+  in datadogHttp env path query "GET" Nothing >>=
+     decodeDatadog "loadMonitors"
 
 
 -- | Prevent all monitors from notifying indefinitely.
 muteAllMonitors :: Environment -> IO ()
-muteAllMonitors (Environment keys manager) = do
-  initReq <- parseUrl $ "https://app.datadoghq.com/api/v1/monitor/mute_all"
-             ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
-  let request = initReq { method = "POST" }
-  void $ httpLbs request manager
+muteAllMonitors env =
+  let path = "monitor/mute_all"
+  in void $ datadogHttp env path [] "POST" Nothing
 
 
 -- | Allow all monitors to notify.
 unmuteAllMonitors :: Environment -> IO ()
-unmuteAllMonitors (Environment keys manager) = do
-  initReq <- parseUrl $ "https://app.datadoghq.com/api/v1/monitor/unmute_all"
-             ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
-  let request = initReq { method = "POST" }
-  void $ httpLbs request manager
+unmuteAllMonitors env =
+  let path = "monitor/unmute_all"
+  in void $ datadogHttp env path [] "POST" Nothing

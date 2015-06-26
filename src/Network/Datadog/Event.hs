@@ -19,6 +19,8 @@ module Network.Datadog.Event
 ) where
 
 
+import Control.Monad (liftM)
+
 import Data.Aeson hiding (Error, Success)
 import Data.Aeson.Types (modifyFailure, typeMismatch)
 -- import qualified Data.Aeson (Result(Success))
@@ -30,8 +32,6 @@ import Data.Text (Text, pack, unpack)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import Data.Vector (toList)
-
-import Network.HTTP.Conduit
 
 import Network.Datadog
 import Network.Datadog.Internal
@@ -239,24 +239,20 @@ instance FromJSON WrappedEvents where
 
 -- | Store a new event in Datadog.
 createEvent :: Environment -> EventSpec -> IO Event
-createEvent (Environment keys manager) eventDetails = do
-  initReq <- parseUrl $ "https://app.datadoghq.com/api/v1/events?api_key=" ++ apiKey keys
-  let request = initReq { method = "POST"
-                        , requestHeaders = [("Content-type","application/json")]
-                        , requestBody = RequestBodyLBS (encode eventDetails)
-                        }
-  resp <- httpLbs request manager
-  fmap wrappedEvent $ decodeDatadog "createEvent" $ responseBody resp
+createEvent env eventDetails =
+  let path = "events"
+  in liftM wrappedEvent $
+     datadogHttp env path [] "POST" (Just $ encode eventDetails) >>=
+     decodeDatadog "createEvent"
 
 
 -- | Load an event from Datadog by its ID.
 loadEvent :: Environment -> EventId -> IO Event
-loadEvent (Environment keys manager) eventId = do
-  request <- parseUrl $ "https://app.datadoghq.com/api/v1/events/" ++ show eventId
-             ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
-  resp <- httpLbs request manager
-  fmap wrappedEvent $ decodeDatadog "loadEvent" $ responseBody resp
-
+loadEvent env eventId =
+  let path = "events/" ++ show eventId
+  in liftM wrappedEvent $
+     datadogHttp env path [] "GET" Nothing >>=
+     decodeDatadog "loadEvent"
 
 -- | Query Datadog for events within a specific time range.
 loadEvents :: Environment
@@ -267,12 +263,12 @@ loadEvents :: Environment
            -> [Text]
            -- ^ A list of tags to filter by
            -> IO [Event]
-loadEvents (Environment keys manager) (start,end) priority tags = do
-  request <- parseUrl $ "https://app.datadoghq.com/api/v1/events?api_key=" ++ apiKey keys
-             ++ "&application_key=" ++ appKey keys
-             ++ "&start=" ++ show (floor (utcTimeToPOSIXSeconds start) :: Integer)
-             ++ "&end=" ++ show (floor (utcTimeToPOSIXSeconds end) :: Integer)
-             ++ maybe "" (\a -> "&priority=" ++ show a) priority
-             ++ if null tags then "" else "&tags=" ++ intercalate "," (map unpack tags)
-  resp <- httpLbs request manager
-  fmap wrappedEvents $ decodeDatadog "loadEvents" $ responseBody resp
+loadEvents env (start,end) priority tags =
+  let path = "events"
+      query = [("start", show (floor (utcTimeToPOSIXSeconds start) :: Integer))
+              ,("end", show (floor (utcTimeToPOSIXSeconds end) :: Integer))] ++
+              maybe [] (\a -> [("priority", show a)]) priority ++
+              [("tags", intercalate "," (map unpack tags)) | not (null tags)]
+  in liftM wrappedEvents $
+     datadogHttp env path query "GET" Nothing >>=
+     decodeDatadog "loadEvent"

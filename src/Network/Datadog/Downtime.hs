@@ -28,8 +28,6 @@ import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import qualified Data.Vector (head)
 
-import Network.HTTP.Conduit
-
 import Network.Datadog
 import Network.Datadog.Internal
 
@@ -95,54 +93,40 @@ instance FromJSON Downtime where
 
 -- | Schedule a new downtime in Datadog.
 scheduleDowntime :: Environment -> DowntimeSpec -> IO Downtime
-scheduleDowntime (Environment keys manager) downtimeSpec = do
-  initReq <- parseUrl $ "https://app.datadoghq.com/api/v1/downtime?api_key=" ++ apiKey keys
-             ++ "&application_key=" ++ appKey keys
-  let request = initReq { method = "POST"
-                        , requestHeaders = [("Content-type","application/json")]
-                        , requestBody = RequestBodyLBS (encode downtimeSpec)
-                        }
-  resp <- httpLbs request manager
-  decodeDatadog "scheduleDowntime" $ responseBody resp
+scheduleDowntime env downtimeSpec =
+  let path = "downtime"
+  in datadogHttp env path [] "POST" (Just $ encode downtimeSpec) >>=
+     decodeDatadog "scheduleDowntime"
 
 
 -- | Update the specification of a downtime in Datadog.
 updateDowntime :: Environment -> DowntimeId -> DowntimeSpec -> IO Downtime
-updateDowntime (Environment keys manager) did dspec = do
-  initReq <- parseUrl $ "https://app.datadoghq.com/api/v1/downtime/" ++ show did
-             ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
-  let request = initReq { method = "PUT"
-                        , requestHeaders = [("Content-type","application/json")]
-                        , requestBody = RequestBodyLBS (encode dspec)
-                        }
-  resp <- httpLbs request manager
-  decodeDatadog "updateDowntime" $ responseBody resp
+updateDowntime env did dspec =
+  let path = "downtime/" ++ show did
+  in datadogHttp env path [] "PUT" (Just $ encode dspec) >>=
+     decodeDatadog "updateDowntime"
 
 
 -- | Cancel scheduled downtime in Datadog.
 cancelDowntime :: Environment -> DowntimeId -> IO ()
-cancelDowntime (Environment keys manager) downtimeId = do
-  initReq <- parseUrl $ "https://app.datadoghq.com/api/v1/downtime/" ++ show downtimeId
-             ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
-  let request = initReq { method = "DELETE" }
-  void $ httpLbs request manager
+cancelDowntime env downtimeId =
+  let path = "downtime/" ++ show downtimeId
+  in void $ datadogHttp env path [] "DELETE" Nothing
 
 
 -- | Load a scheduled downtime from Datadog by its ID.
 loadDowntime :: Environment -> DowntimeId -> IO Downtime
-loadDowntime (Environment keys manager) downtimeId = do
-  request <- parseUrl $ "https://app.datadoghq.com/api/v1/downtime/" ++ show downtimeId
-             ++ "?api_key=" ++ apiKey keys ++ "&application_key=" ++ appKey keys
-  resp <- httpLbs request manager
-  decodeDatadog "loadDowntime" $ responseBody resp
+loadDowntime env downtimeId =
+  let path = "downtime/" ++ show downtimeId
+  in datadogHttp env path [] "GET" Nothing >>=
+     decodeDatadog "loadDowntime"
 
 
 -- | Load all scheduled downtimes, optionally filtering for only downtimes that
 -- are currently active.
 loadDowntimes :: Environment -> Bool -> IO [Downtime]
-loadDowntimes (Environment keys manager) active = do
-  request <- parseUrl $ "https://app.datadoghq.com/api/v1/downtime?api_key=" ++ apiKey keys
-             ++ "&application_key=" ++ appKey keys
-             ++ if active then "&current_only=true" else []
-  resp <- httpLbs request manager
-  decodeDatadog "loadDowntimes" $ responseBody resp
+loadDowntimes env active =
+  let path = "downtime"
+      query = [("current_only", "true") | active]
+  in datadogHttp env path query "GET" Nothing >>=
+     decodeDatadog "loadDowntimes"

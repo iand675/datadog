@@ -18,9 +18,8 @@ import Data.Text (Text, dropWhile, intercalate, tail, takeWhile)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 
-import Network.HTTP.Conduit
-
 import Network.Datadog
+import Network.Datadog.Internal
 
 
 -- | The status of a service, based on a check that is run against it.
@@ -89,10 +88,6 @@ instance FromJSON CheckResult where
 
 -- | Record the result of a check in Datadog.
 recordCheck :: Environment -> CheckResult -> IO ()
-recordCheck (Environment keys manager) checkResult = do
-  initReq <- parseUrl $ "https://app.datadoghq.com/api/v1/check_run?api_key=" ++ apiKey keys
-  let request = initReq { method = "POST"
-                        , requestHeaders = [("Content-type","application/json")]
-                        , requestBody = RequestBodyLBS (encode checkResult)
-                        }
-  void $ httpLbs request manager
+recordCheck env checkResult =
+  let path = "check_run"
+  in void $ datadogHttp env path [] "POST" $ Just $ encode checkResult
