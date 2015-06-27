@@ -14,10 +14,10 @@ import qualified Test.Network.Datadog.Host as Host (tests)
 tests :: IO [Test]
 tests = map (\(s,t) -> Group s False t)
         <$> mapM (\(s,tm) -> fmap (\t -> (s,t)) tm)
-        [("StatsD", StatsD.tests)]
-        -- ,("Check", Check.tests)
-        -- ,("Downtime", Downtime.tests)
-        -- ,("Event", Event.tests)
-        -- ,("Host", Host.tests)
-        -- ,("Monitor", Monitor.tests)
-        -- ]
+        [("StatsD", StatsD.tests)
+        ,("Check", Check.tests)
+        ,("Downtime", Downtime.tests)
+        ,("Event", Event.tests)
+        ,("Host", Host.tests)
+        ,("Monitor", Monitor.tests)
+        ]
