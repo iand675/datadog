@@ -26,12 +26,9 @@ import Data.Aeson.Types (modifyFailure, typeMismatch)
 -- import qualified Data.Aeson (Result(Success))
 import qualified Data.HashMap.Strict as Data.HashMap
 import Data.List (intercalate)
-import Data.HashSet (HashSet)
-import qualified Data.HashSet as HashSet
 import Data.Text (Text, pack, unpack)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
-import Data.Vector (toList)
 
 import Network.Datadog
 import Network.Datadog.Internal
@@ -154,7 +151,7 @@ data EventSpec = EventSpec { edTitle :: Text
                            , edPriority :: EventPriority
                            , edHost :: Maybe Text
                              -- ^ The hostname associated with the event
-                           , edTags :: HashSet Text
+                           , edTags :: [Tag]
                            , edAlertType :: AlertType
                            , edSourceType :: Maybe SourceType
                              -- ^ The trigger of the event (if identifiable)
@@ -166,7 +163,7 @@ instance ToJSON EventSpec where
                       ,"date_happened" .= (floor (utcTimeToPOSIXSeconds (edDateHappened ed)) :: Integer)
                       ,"priority" .= pack (show (edPriority ed))
                       ,"alert_type" .= pack (show (edAlertType ed))
-                      ,"tags" .= HashSet.toList (edTags ed)]
+                      ,"tags" .= edTags ed]
                       ++ maybe [] (\a -> ["host" .= a]) (edHost ed)
                       ++ maybe [] (\a -> ["source_type_name" .= pack (show a)]) (edSourceType ed)
                      )
@@ -179,7 +176,7 @@ instance FromJSON EventSpec where
                          (withScientific "Integer" (\t -> return (posixSecondsToUTCTime (fromIntegral (floor t :: Integer)))) =<< v .: "date_happened") <*>
                          v .: "priority" <*>
                          v .:? "host" .!= Nothing <*>
-                         (withArray "List" (fmap HashSet.fromList . mapM (withText "Text" return) . toList) =<< v .: "tags") <*>
+                         v .:? "tags" .!= [] <*>
                          v .:? "alert_type" .!= Info <*>
                          v .:? "source_type" .!= Nothing
   parseJSON a = modifyFailure ("EventSpec: " ++) $ typeMismatch "Object" a
@@ -194,7 +191,7 @@ minimalEventSpec title text time eventPriority = EventSpec { edTitle = title
                                                            , edDateHappened = time
                                                            , edPriority = eventPriority
                                                            , edHost = Nothing
-                                                           , edTags = HashSet.empty
+                                                           , edTags = []
                                                            , edAlertType = Info
                                                            , edSourceType = Nothing
                                                            }
@@ -268,7 +265,7 @@ loadEvents env (start,end) priority tags =
       query = [("start", show (floor (utcTimeToPOSIXSeconds start) :: Integer))
               ,("end", show (floor (utcTimeToPOSIXSeconds end) :: Integer))] ++
               maybe [] (\a -> [("priority", show a)]) priority ++
-              [("tags", intercalate "," (map unpack tags)) | not (null tags)]
+              [("tags", intercalate "," (map show tags)) | not (null tags)]
   in liftM wrappedEvents $
      datadogHttp env path query "GET" Nothing >>=
      decodeDatadog "loadEvent"

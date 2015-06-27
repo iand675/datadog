@@ -364,12 +364,12 @@ deleteMonitor env monitorId =
 -- than one filter tag, only metrics which match all filter tags will be
 -- provided.
 loadMonitors :: Environment
-             -> [Text]
+             -> [Tag]
              -- ^ Tags on which to filter the results
              -> IO [Monitor]
 loadMonitors env tags =
   let path = "monitor"
-      query = [("tags", intercalate "," (map unpack tags)) | not (null tags)]
+      query = [("tags", intercalate "," (map show tags)) | not (null tags)]
   in datadogHttp env path query "GET" Nothing >>=
      decodeDatadog "loadMonitors"
 

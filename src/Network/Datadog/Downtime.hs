@@ -33,8 +33,10 @@ import Network.Datadog.Internal
 
 
 -- | A description of when downtime should occur.
-data DowntimeSpec = DowntimeSpec { dsScope :: Text
-                                   -- ^ The scope/tag(s) to apply downtime to
+data DowntimeSpec = DowntimeSpec { dsScope :: Tag
+                                   -- ^ The scope to apply downtime to (if applying downtime to a
+                                   -- host, use a tag of the form "host:hostname", NOT just
+                                   -- "hostname")
                                  , dsStart :: Maybe UTCTime
                                    -- ^ When to start the downtime (or immediately)
                                  , dsEnd :: Maybe UTCTime
@@ -62,7 +64,7 @@ instance FromJSON DowntimeSpec where
 
 -- | Creates the most basic possible downtime specification, which just
 -- contains the scope to which the downtime applies.
-minimalDowntimeSpec :: Text -> DowntimeSpec
+minimalDowntimeSpec :: Tag -> DowntimeSpec
 minimalDowntimeSpec scope = DowntimeSpec { dsScope = scope
                                          , dsStart = Nothing
                                          , dsEnd = Nothing

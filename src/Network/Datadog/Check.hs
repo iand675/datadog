@@ -14,7 +14,7 @@ import Control.Monad (void)
 
 import Data.Aeson
 import Data.Aeson.Types (modifyFailure, typeMismatch)
-import Data.Text (Text, dropWhile, intercalate, tail, takeWhile)
+import Data.Text (Text)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 
@@ -61,15 +61,15 @@ data CheckResult = CheckResult { crCheck :: Text
                                , crMessage :: Maybe Text
                                  -- ^ Information related to why this specific check run supplied
                                  -- the status it did
-                               , crTags :: [(Text,Text)]
-                                 -- ^ (key,value) tags to associate with this check run
+                               , crTags :: [Tag]
+                                 -- ^ Tags to associate with this check run
                                } deriving (Eq)
 
 instance ToJSON CheckResult where
   toJSON cr = object (["check" .= crCheck cr
                       ,"host_name" .= crHostName cr
-                      ,"status" .= (\(Number a) -> a) (toJSON (crStatus cr))
-                      ,"tags" .= map (\(a,b) -> intercalate ":" [a,b]) (crTags cr)]
+                      ,"status" .= crStatus cr
+                      ,"tags" .= crTags cr]
                       ++ maybe [] (\a -> ["timestamp" .= (floor (utcTimeToPOSIXSeconds a) :: Integer)]) (crTimestamp cr)
                       ++ maybe [] (\a -> ["message" .= a]) (crMessage cr))
 
@@ -81,8 +81,7 @@ instance FromJSON CheckResult where
                          v .: "status" <*>
                          v .:? "timestamp" .!= Nothing <*>
                          v .:? "message" .!= Nothing <*>
-                         (map keyvalue <$> (v .: "tags"))
-    where keyvalue a = (Data.Text.takeWhile (/=':') a, Data.Text.tail (Data.Text.dropWhile (/=':') a))
+                         v .: "tags" .!= []
   parseJSON a = modifyFailure ("CheckResult: " ++) $ typeMismatch "Object" a
 
 

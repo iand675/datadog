@@ -33,7 +33,7 @@ testDowntimeCycle = do
   env <- environment
   time <- getCurrentTime
   let downtimeDetails = minimalDowntimeSpec
-                        "haskell-datadog-test-scope"
+                        (read "haskell-datadog-test-scope")
   let downtimeUpdatedDetails = downtimeDetails { dsEnd = Just (addUTCTime 300 time) }
   let computation = do
         threadDelay 500000

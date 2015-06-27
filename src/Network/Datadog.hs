@@ -9,8 +9,13 @@ module Network.Datadog
 , loadKeysFromEnv
 , Environment(..)
 , createEnvironment
+, Tag
 ) where
 
+
+import Data.Aeson
+import Data.Aeson.Types (modifyFailure, typeMismatch)
+import qualified Data.Text as T
 
 import Network.HTTP.Conduit
 
@@ -47,3 +52,41 @@ data Environment = Environment { envKeys :: Keys
 createEnvironment :: Keys -> IO Environment
 createEnvironment keys = fmap (Environment keys) managerIO
   where managerIO = newManager conduitManagerSettings
+
+
+-- | Entity descriptor.
+--
+-- Entities in Datadog (hosts, metrics, events, etc) are frequently associated
+-- with one more more "tags". These tags are labels that identify an entity as
+-- belonging to a particular group or having particular properties. A tag can
+-- come in two forms: a simple text label, describing entities associated with
+-- the tag, or a key-value pair, associating entities with a specific slice of
+-- a larger categorization.
+--
+-- As strings, the key and value parts of a key-value pair are separated by a
+-- (':'). As such, any tag with no colons is a label, and any tag with one (or
+-- more) is a key-value pair - if more than one ':' is specified, the
+-- additional ':'s will become part of the value.
+data Tag = KeyValueTag T.Text T.Text
+         | LabelTag T.Text
+         deriving (Eq)
+
+instance Show Tag where
+  show (KeyValueTag k v) = T.unpack k ++ (':' : T.unpack v)
+  show (LabelTag t) = T.unpack t
+
+instance Read Tag where
+  readsPrec _ s = let t = T.pack s
+                  in (\a -> [(a, "")]) $
+                     maybe (LabelTag t) (\i -> uncurry KeyValueTag (T.splitAt i t)) $
+                     T.findIndex (==':') t
+
+instance ToJSON Tag where
+  toJSON (KeyValueTag k v) = Data.Aeson.String $ k `T.append` (':' `T.cons` v)
+  toJSON (LabelTag t) = Data.Aeson.String t
+
+instance FromJSON Tag where
+  parseJSON (String s) = return $
+                         maybe (LabelTag s) (\i -> uncurry KeyValueTag (T.splitAt i s)) $
+                         T.findIndex (==':') s
+  parseJSON a = modifyFailure ("Tag: " ++) $ typeMismatch "String" a
