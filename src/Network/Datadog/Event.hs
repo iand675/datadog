@@ -24,7 +24,7 @@ import Control.Monad (liftM)
 import Data.Aeson hiding (Error, Success)
 import Data.Aeson.Types (modifyFailure, typeMismatch)
 -- import qualified Data.Aeson (Result(Success))
-import qualified Data.HashMap.Strict as Data.HashMap
+import qualified Data.HashMap.Strict as Data.HashMap (insert)
 import Data.List (intercalate)
 import Data.Text (Text, pack, unpack)
 import Data.Time.Clock
@@ -210,9 +210,8 @@ data Event = Event { eId :: EventId
                    } deriving (Eq, Show)
 
 instance ToJSON Event where
-  toJSON event = Object $ Data.HashMap.union basemap newmap
+  toJSON event = Object $ Data.HashMap.insert "id" (toJSON (eId event)) basemap
     where (Object basemap) = toJSON (eDetails event)
-          (Object newmap) = object ["id" .= eId event]
 
 instance FromJSON Event where
   parseJSON (Object v) = modifyFailure ("Event: " ++) $

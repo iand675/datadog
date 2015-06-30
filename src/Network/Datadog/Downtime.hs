@@ -22,7 +22,7 @@ import Control.Monad (void)
 
 import Data.Aeson
 import Data.Aeson.Types (modifyFailure, typeMismatch)
-import qualified Data.HashMap.Strict as Data.HashMap (union)
+import qualified Data.HashMap.Strict as Data.HashMap (insert)
 import Data.Text (Text)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
@@ -82,9 +82,8 @@ data Downtime = Downtime { dId :: DowntimeId
                          } deriving (Eq)
 
 instance ToJSON Downtime where
-  toJSON downtime = Object $ Data.HashMap.union basemap newmap
+  toJSON downtime = Object $ Data.HashMap.insert "id" (toJSON (dId downtime)) basemap
     where (Object basemap) = toJSON (dSpec downtime)
-          (Object newmap) = object ["id" .= dId downtime]
 
 instance FromJSON Downtime where
   parseJSON (Object v) = modifyFailure ("Downtime: " ++) $

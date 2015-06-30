@@ -305,9 +305,8 @@ data Monitor = Monitor { mId :: MonitorId
                        } deriving (Eq)
 
 instance ToJSON Monitor where
-  toJSON monitor = Object $ Data.HashMap.union basemap newmap
+  toJSON monitor = Object $ Data.HashMap.insert "id" (toJSON (mId monitor)) basemap
     where (Object basemap) = toJSON (mSpec monitor)
-          (Object newmap) = object ["id" .= mId monitor]
 
 instance FromJSON Monitor where
   parseJSON (Object v) = modifyFailure ("Monitor: " ++ ) $
