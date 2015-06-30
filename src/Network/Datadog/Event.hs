@@ -158,15 +158,16 @@ data EventSpec = EventSpec { edTitle :: Text
                            } deriving (Eq, Show)
 
 instance ToJSON EventSpec where
-  toJSON ed = object (["title" .= edTitle ed
-                      ,"text" .= edText ed
-                      ,"date_happened" .= (floor (utcTimeToPOSIXSeconds (edDateHappened ed)) :: Integer)
-                      ,"priority" .= pack (show (edPriority ed))
-                      ,"alert_type" .= pack (show (edAlertType ed))
-                      ,"tags" .= edTags ed]
-                      ++ maybe [] (\a -> ["host" .= a]) (edHost ed)
-                      ++ maybe [] (\a -> ["source_type_name" .= pack (show a)]) (edSourceType ed)
-                     )
+  toJSON ed = object $
+              prependMaybe (\a -> "host" .= a) (edHost ed) $
+              prependMaybe (\a -> "source_type_name" .= pack (show a)) (edSourceType ed)
+              ["title" .= edTitle ed
+              ,"text" .= edText ed
+              ,"date_happened" .= (floor (utcTimeToPOSIXSeconds (edDateHappened ed)) :: Integer)
+              ,"priority" .= pack (show (edPriority ed))
+              ,"alert_type" .= pack (show (edAlertType ed))
+              ,"tags" .= edTags ed
+              ]
 
 instance FromJSON EventSpec where
   parseJSON (Object v) = modifyFailure ("EventSpec: " ++) $
@@ -262,10 +263,11 @@ loadEvents :: Environment
            -> IO [Event]
 loadEvents env (start,end) priority tags =
   let path = "events"
-      query = [("start", show (floor (utcTimeToPOSIXSeconds start) :: Integer))
-              ,("end", show (floor (utcTimeToPOSIXSeconds end) :: Integer))] ++
-              maybe [] (\a -> [("priority", show a)]) priority ++
-              [("tags", intercalate "," (map show tags)) | not (null tags)]
+      query = prependMaybe (\a -> ("priority", show a)) priority $
+              prependBool (not (null tags)) ("tags", intercalate "," (map show tags))
+              [("start", show (floor (utcTimeToPOSIXSeconds start) :: Integer))
+              ,("end", show (floor (utcTimeToPOSIXSeconds end) :: Integer))
+              ]
   in liftM wrappedEvents $
      datadogHttp env path query "GET" Nothing >>=
      decodeDatadog "loadEvent"

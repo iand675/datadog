@@ -46,11 +46,10 @@ data DowntimeSpec = DowntimeSpec { dsScope :: Tag
                                  } deriving (Eq)
 
 instance ToJSON DowntimeSpec where
-  toJSON ds = object (["scope" .= dsScope ds]
-                      ++ maybe [] (\a -> ["start" .= (ceiling (utcTimeToPOSIXSeconds a) :: Integer)]) (dsStart ds)
-                      ++ maybe [] (\a -> ["end" .= (floor (utcTimeToPOSIXSeconds a) :: Integer)]) (dsEnd ds)
-                      ++ maybe [] (\a -> ["message" .= a]) (dsMessage ds)
-                     )
+  toJSON ds = object $
+              prependMaybe (\a -> "start" .= (ceiling (utcTimeToPOSIXSeconds a) :: Integer)) (dsStart ds) $
+              prependMaybe (\a -> "end" .= (floor (utcTimeToPOSIXSeconds a) :: Integer)) (dsEnd ds)
+              ["scope" .= dsScope ds]
 
 instance FromJSON DowntimeSpec where
   parseJSON (Object v) = modifyFailure ("DowntimeSpec: " ++) $

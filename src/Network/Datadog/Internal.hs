@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Network.Datadog.Internal
-( datadogHttp
+( prependMaybe
+, prependBool
+, datadogHttp
 , decodeDatadog
 ) where
 
@@ -20,6 +22,15 @@ import Data.Text.Lazy.Encoding (decodeUtf8)
 import Network.HTTP.Client
 
 import Network.Datadog
+
+
+prependMaybe :: (a -> b) -> Maybe a -> [b] -> [b]
+prependMaybe _ Nothing = id
+prependMaybe f (Just a) = (f a :)
+
+
+prependBool :: Bool -> b -> [b] -> [b]
+prependBool p a = if p then (a :) else id
 
 
 datadogHttp :: Environment-> String -> [(String, String)] -> BS.ByteString -> Maybe LBS.ByteString -> IO LBS.ByteString

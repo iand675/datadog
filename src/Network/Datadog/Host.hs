@@ -25,10 +25,10 @@ muteHost :: Environment -> Text -> Maybe UTCTime -> Bool -> IO ()
 muteHost env hostname mtime override =
   let path = "host/" ++ unpack hostname ++ "/mute"
       query = [("override", "true") | override]
-      body = object (["hostname" .= hostname]
-                     ++ maybe [] (\a -> ["end" .= (ceiling (utcTimeToPOSIXSeconds a) :: Integer)]) mtime
-                     ++ ["override" .= True | override]
-                    )
+      body = object $
+             prependMaybe (\a -> "end" .= (ceiling (utcTimeToPOSIXSeconds a) :: Integer)) mtime $
+             prependBool override ("override" .= True)
+             ["hostname" .= hostname]
   in void $ datadogHttp env path query "POST" $ Just $ encode body
 
 

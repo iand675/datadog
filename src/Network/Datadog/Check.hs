@@ -66,12 +66,14 @@ data CheckResult = CheckResult { crCheck :: Text
                                } deriving (Eq)
 
 instance ToJSON CheckResult where
-  toJSON cr = object (["check" .= crCheck cr
-                      ,"host_name" .= crHostName cr
-                      ,"status" .= crStatus cr
-                      ,"tags" .= crTags cr]
-                      ++ maybe [] (\a -> ["timestamp" .= (floor (utcTimeToPOSIXSeconds a) :: Integer)]) (crTimestamp cr)
-                      ++ maybe [] (\a -> ["message" .= a]) (crMessage cr))
+  toJSON cr = object $
+              prependMaybe (\a -> "timestamp" .= (floor (utcTimeToPOSIXSeconds a) :: Integer)) (crTimestamp cr) $
+              prependMaybe (\a -> "message" .= a) (crMessage cr)
+              ["check" .= crCheck cr
+              ,"host_name" .= crHostName cr
+              ,"status" .= crStatus cr
+              ,"tags" .= crTags cr
+              ]
 
 instance FromJSON CheckResult where
   parseJSON (Object v) = modifyFailure ("CheckResult: " ++) $

@@ -258,10 +258,12 @@ data MonitorSpec = MonitorSpec { msType :: MonitorType
 
 instance ToJSON MonitorSpec where
   toJSON ms = Object $ Data.HashMap.insert "options" (toJSON (msOptions ms)) hmap
-    where (Object hmap) = object (["type" .= pack (show (msType ms))
-                                  ,"query" .= msQuery ms]
-                                  ++ maybe [] (\a -> ["name" .=  a]) (msName ms)
-                                  ++ maybe [] (\a -> ["message" .=  a]) (msMessage ms))
+    where (Object hmap) = object $
+                          prependMaybe ("name" .=) (msName ms) $
+                          prependMaybe ("message" .=) (msMessage ms)
+                          ["type" .= pack (show (msType ms))
+                          ,"query" .= msQuery ms
+                          ]
 
 instance FromJSON MonitorSpec where
   parseJSON (Object v) = modifyFailure ("MonitorSpec: " ++) $
