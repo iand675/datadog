@@ -61,7 +61,7 @@ import Data.Aeson.Types (modifyFailure, typeMismatch)
 import qualified Data.HashMap.Strict as Data.HashMap
 import Data.List (intercalate)
 import Data.Maybe
-import Data.Text (Text, pack, unpack)
+import qualified Data.Text as T (Text, null, pack, unpack)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 
@@ -92,17 +92,17 @@ instance FromJSON MonitorType where
   -- TODO figure out what "query alert" actually is
   parseJSON (Data.Aeson.String "query alert") = return MetricAlert
   parseJSON (Data.Aeson.String "service check") = return ServiceCheck
-  parseJSON (Data.Aeson.String s) = fail $ "MonitorType: String \"" ++ unpack s ++ "\" is not a valid MonitorType"
+  parseJSON (Data.Aeson.String s) = fail $ "MonitorType: String \"" ++ T.unpack s ++ "\" is not a valid MonitorType"
   parseJSON a = modifyFailure ("MonitorType: " ++) $ typeMismatch "String" a
 
 
 -- | Advanced configuration parameters for a monitor.
-data MonitorOptions = MonitorOptions { moSilenced :: Data.HashMap.HashMap Text (Maybe Integer)
+data MonitorOptions = MonitorOptions { moSilenced :: Data.HashMap.HashMap T.Text (Maybe Integer)
                                      , moNotifyNoData :: Bool
                                      , moNoDataTimeframe :: Maybe Integer
                                      , moTimeoutH :: Maybe Integer
                                      , moRenotifyInterval :: Maybe Integer
-                                     , moEscalationMessage :: Text
+                                     , moEscalationMessage :: T.Text
                                      , moNotifyAudit :: Bool
                                      } deriving (Eq)
 
@@ -155,18 +155,18 @@ defaultMonitorOptions = MonitorOptions { moSilenced = Data.HashMap.empty
 -- | Provide a list of the silenced scopes for this monitor and the time at
 -- which the silencer will expire (may be indefinite). The monitor @ "*" @
 -- refers to the monitor at large (un-scoped).
-getSilencedMonitorScopes :: MonitorOptions -> [(Text, Maybe UTCTime)]
+getSilencedMonitorScopes :: MonitorOptions -> [(T.Text, Maybe UTCTime)]
 getSilencedMonitorScopes options = map (second (fmap (posixSecondsToUTCTime . fromIntegral))) $ Data.HashMap.toList $ moSilenced options
 
 -- | Silence a given scope until some time (or indefinitely), replacing the
 -- current silencer on the given scope if one already exists.
-silenceMonitorScope :: Text -> Maybe UTCTime -> MonitorOptions -> MonitorOptions
+silenceMonitorScope :: T.Text -> Maybe UTCTime -> MonitorOptions -> MonitorOptions
 silenceMonitorScope scope mtime old = old { moSilenced = silenced }
   where silenced = Data.HashMap.insert scope (fmap (floor . utcTimeToPOSIXSeconds) mtime) $ moSilenced old
 
 -- | Remove the silencer from a given scope, if the scope is currently
 -- silenced.
-unsilenceMonitorScope :: Text -> MonitorOptions -> MonitorOptions
+unsilenceMonitorScope :: T.Text -> MonitorOptions -> MonitorOptions
 unsilenceMonitorScope scope old = old { moSilenced = silenced }
   where silenced = Data.HashMap.delete scope $ moSilenced old
 
@@ -209,15 +209,15 @@ clearMonitorTimeout old = old { moTimeoutH = Nothing }
 -- | Determine after how long after being triggered the monitor will re-notify,
 -- and what message it will include in the re-notification (if any), providing
 -- Nothing if the monitor will never re-notify.
-doesRenotifyMonitor :: MonitorOptions -> Maybe (NominalDiffTime,Maybe Text)
+doesRenotifyMonitor :: MonitorOptions -> Maybe (NominalDiffTime,Maybe T.Text)
 doesRenotifyMonitor options = (\i -> (fromIntegral (i * 60), result)) <$> moRenotifyInterval options
   where message = moEscalationMessage options
-        result = if message == "" then Nothing else Just message
+        result = if T.null message then Nothing else Just message
 
 -- | Have the monitor re-notify some amount of time after the most recent
 -- notification (rounded down to the nearest minute) and optionally what text
 -- it will include in the re-notification.
-renotifyMonitor :: NominalDiffTime -> Maybe Text -> MonitorOptions -> MonitorOptions
+renotifyMonitor :: NominalDiffTime -> Maybe T.Text -> MonitorOptions -> MonitorOptions
 renotifyMonitor difftime mmessage old = old { moRenotifyInterval = Just stamp, moEscalationMessage = message }
   where stamp = floor (difftime / 60)
         message = fromMaybe "" mmessage
@@ -243,12 +243,12 @@ noNotifyOnAudit old = old { moNotifyAudit = False }
 -- | A representation of a monitor's configuration, from which a monitor could
 -- be rebuilt.
 data MonitorSpec = MonitorSpec { msType :: MonitorType
-                               , msQuery :: Text
+                               , msQuery :: T.Text
                                  -- ^ The query string the monitor uses to
                                  -- determine its state.
-                               , msName :: Maybe Text
+                               , msName :: Maybe T.Text
                                  -- ^ The human-readable name of the monitor.
-                               , msMessage :: Maybe Text
+                               , msMessage :: Maybe T.Text
                                  -- ^ The message sent with the notification
                                  -- when the monitor is triggered.
                                , msOptions :: MonitorOptions
@@ -261,7 +261,7 @@ instance ToJSON MonitorSpec where
     where (Object hmap) = object $
                           prependMaybe ("name" .=) (msName ms) $
                           prependMaybe ("message" .=) (msMessage ms)
-                          ["type" .= pack (show (msType ms))
+                          ["type" .= T.pack (show (msType ms))
                           ,"query" .= msQuery ms
                           ]
 
@@ -281,7 +281,7 @@ instance FromJSON MonitorSpec where
 --
 -- This uses 'defaultMonitorOptions' to set the options (see that function for
 -- disclaimer(s)).
-minimalMonitorSpec :: MonitorType -> Text -> MonitorSpec
+minimalMonitorSpec :: MonitorType -> T.Text -> MonitorSpec
 minimalMonitorSpec cmtype cmquery = MonitorSpec { msType = cmtype
                                                 , msQuery = cmquery
                                                 , msName = Nothing
