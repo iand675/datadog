@@ -26,7 +26,7 @@ import qualified Data.HashMap.Strict as Data.HashMap (union)
 import Data.Text (Text)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
-import qualified Data.Vector (head)
+import Data.Vector ((!?))
 
 import Network.Datadog
 import Network.Datadog.Internal
@@ -54,7 +54,7 @@ instance ToJSON DowntimeSpec where
 instance FromJSON DowntimeSpec where
   parseJSON (Object v) = modifyFailure ("DowntimeSpec: " ++) $
                          DowntimeSpec <$>
-                         (withArray "Text" (parseJSON . Data.Vector.head) =<< v .: "scope") <*>
+                         (withArray "Text" (\t -> maybe (fail "\"scope\" Array is too short") parseJSON (t !? 0)) =<< v .: "scope") <*>
                          (maybe (return Nothing) (withScientific "Integer" (\t -> return (Just (posixSecondsToUTCTime (fromIntegral (floor t :: Integer)))))) =<< (v .:? "start")) <*>
                          (maybe (return Nothing) (withScientific "Integer" (\t -> return (Just (posixSecondsToUTCTime (fromIntegral (floor t :: Integer)))))) =<< (v .:? "end")) <*>
                          v .:? "message" .!= Nothing
