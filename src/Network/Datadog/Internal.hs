@@ -20,6 +20,7 @@ import Data.Text.Encoding (encodeUtf8)
 import Data.Text.Lazy.Encoding (decodeUtf8)
 
 import Network.HTTP.Client
+import Network.HTTP.Types
 
 import Network.Datadog
 
@@ -33,7 +34,7 @@ prependBool :: Bool -> b -> [b] -> [b]
 prependBool p a = if p then (a :) else id
 
 
-datadogHttp :: Environment-> String -> [(String, String)] -> BS.ByteString -> Maybe LBS.ByteString -> IO LBS.ByteString
+datadogHttp :: Environment-> String -> [(String, String)] -> StdMethod -> Maybe LBS.ByteString -> IO LBS.ByteString
 datadogHttp (Environment keys baseUrl manager) endpoint query httpMethod content = do
   initReq <- parseUrl $ baseUrl ++ endpoint
   let body = RequestBodyLBS $ fromMaybe LBS.empty content
@@ -43,7 +44,7 @@ datadogHttp (Environment keys baseUrl manager) endpoint query httpMethod content
   let fullQuery = map (\(a,b) -> (encodeUtf8 (pack a), Just (encodeUtf8 (pack b)))) $
                   apiQuery ++ query
   let request = setQueryString fullQuery $
-                initReq { method = httpMethod
+                initReq { method = renderStdMethod httpMethod
                         , requestBody = body
                         , requestHeaders = headers
                         }

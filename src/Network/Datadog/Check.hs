@@ -18,6 +18,8 @@ import Data.Text (Text)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 
+import Network.HTTP.Types
+
 import Network.Datadog
 import Network.Datadog.Internal
 
@@ -91,4 +93,4 @@ instance FromJSON CheckResult where
 recordCheck :: Environment -> CheckResult -> IO ()
 recordCheck env checkResult =
   let path = "check_run"
-  in void $ datadogHttp env path [] "POST" $ Just $ encode checkResult
+  in void $ datadogHttp env path [] POST $ Just $ encode checkResult

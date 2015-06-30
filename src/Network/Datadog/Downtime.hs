@@ -28,6 +28,8 @@ import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import Data.Vector ((!?))
 
+import Network.HTTP.Types
+
 import Network.Datadog
 import Network.Datadog.Internal
 
@@ -95,7 +97,7 @@ instance FromJSON Downtime where
 scheduleDowntime :: Environment -> DowntimeSpec -> IO Downtime
 scheduleDowntime env downtimeSpec =
   let path = "downtime"
-  in datadogHttp env path [] "POST" (Just $ encode downtimeSpec) >>=
+  in datadogHttp env path [] POST (Just $ encode downtimeSpec) >>=
      decodeDatadog "scheduleDowntime"
 
 
@@ -103,7 +105,7 @@ scheduleDowntime env downtimeSpec =
 updateDowntime :: Environment -> DowntimeId -> DowntimeSpec -> IO Downtime
 updateDowntime env did dspec =
   let path = "downtime/" ++ show did
-  in datadogHttp env path [] "PUT" (Just $ encode dspec) >>=
+  in datadogHttp env path [] PUT (Just $ encode dspec) >>=
      decodeDatadog "updateDowntime"
 
 
@@ -111,14 +113,14 @@ updateDowntime env did dspec =
 cancelDowntime :: Environment -> DowntimeId -> IO ()
 cancelDowntime env downtimeId =
   let path = "downtime/" ++ show downtimeId
-  in void $ datadogHttp env path [] "DELETE" Nothing
+  in void $ datadogHttp env path [] DELETE Nothing
 
 
 -- | Load a scheduled downtime from Datadog by its ID.
 loadDowntime :: Environment -> DowntimeId -> IO Downtime
 loadDowntime env downtimeId =
   let path = "downtime/" ++ show downtimeId
-  in datadogHttp env path [] "GET" Nothing >>=
+  in datadogHttp env path [] GET Nothing >>=
      decodeDatadog "loadDowntime"
 
 
@@ -128,5 +130,5 @@ loadDowntimes :: Environment -> Bool -> IO [Downtime]
 loadDowntimes env active =
   let path = "downtime"
       query = [("current_only", "true") | active]
-  in datadogHttp env path query "GET" Nothing >>=
+  in datadogHttp env path query GET Nothing >>=
      decodeDatadog "loadDowntimes"

@@ -16,6 +16,8 @@ import Data.Text (Text, unpack)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 
+import Network.HTTP.Types
+
 import Network.Datadog
 import Network.Datadog.Internal
 
@@ -29,7 +31,7 @@ muteHost env hostname mtime override =
              prependMaybe (\a -> "end" .= (ceiling (utcTimeToPOSIXSeconds a) :: Integer)) mtime $
              prependBool override ("override" .= True)
              ["hostname" .= hostname]
-  in void $ datadogHttp env path query "POST" $ Just $ encode body
+  in void $ datadogHttp env path query POST $ Just $ encode body
 
 
 unmuteHost :: Environment -> Text -> IO ()
@@ -37,4 +39,4 @@ unmuteHost :: Environment -> Text -> IO ()
 unmuteHost env hostname =
   let path = "host/" ++ unpack hostname ++ "/unmute"
       body = object ["hostname" .= hostname]
-  in void $ datadogHttp env path [] "POST" $ Just $ encode body
+  in void $ datadogHttp env path [] POST $ Just $ encode body

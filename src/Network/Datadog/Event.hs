@@ -30,6 +30,8 @@ import Data.Text (Text, pack, unpack)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 
+import Network.HTTP.Types
+
 import Network.Datadog
 import Network.Datadog.Internal
 
@@ -239,7 +241,7 @@ createEvent :: Environment -> EventSpec -> IO Event
 createEvent env eventDetails =
   let path = "events"
   in liftM wrappedEvent $
-     datadogHttp env path [] "POST" (Just $ encode eventDetails) >>=
+     datadogHttp env path [] POST (Just $ encode eventDetails) >>=
      decodeDatadog "createEvent"
 
 
@@ -248,7 +250,7 @@ loadEvent :: Environment -> EventId -> IO Event
 loadEvent env eventId =
   let path = "events/" ++ show eventId
   in liftM wrappedEvent $
-     datadogHttp env path [] "GET" Nothing >>=
+     datadogHttp env path [] GET Nothing >>=
      decodeDatadog "loadEvent"
 
 -- | Query Datadog for events within a specific time range.
@@ -268,5 +270,5 @@ loadEvents env (start,end) priority tags =
               ,("end", show (floor (utcTimeToPOSIXSeconds end) :: Integer))
               ]
   in liftM wrappedEvents $
-     datadogHttp env path query "GET" Nothing >>=
+     datadogHttp env path query GET Nothing >>=
      decodeDatadog "loadEvent"

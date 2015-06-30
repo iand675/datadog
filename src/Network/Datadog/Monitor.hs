@@ -65,6 +65,8 @@ import qualified Data.Text as T (Text, null, pack, unpack)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 
+import Network.HTTP.Types
+
 import Network.Datadog
 import Network.Datadog.Internal
 
@@ -318,7 +320,7 @@ instance FromJSON Monitor where
 createMonitor :: Environment -> MonitorSpec -> IO Monitor
 createMonitor env monitorspec =
   let path = "monitor"
-  in datadogHttp env path [] "POST" (Just $ encode monitorspec) >>=
+  in datadogHttp env path [] POST (Just $ encode monitorspec) >>=
      decodeDatadog "createMonitor"
 
 
@@ -326,7 +328,7 @@ createMonitor env monitorspec =
 loadMonitor :: Environment -> MonitorId -> IO Monitor
 loadMonitor env monitorId =
   let path = "monitor/" ++ show monitorId
-  in datadogHttp env path [] "GET" Nothing >>=
+  in datadogHttp env path [] GET Nothing >>=
      decodeDatadog "loadMonitor"
 
 
@@ -342,7 +344,7 @@ loadMonitor env monitorId =
 updateMonitor :: Environment -> MonitorId -> MonitorSpec -> IO Monitor
 updateMonitor env monitorId mspec =
   let path = "monitor/" ++ show monitorId
-  in datadogHttp env path [] "PUT" (Just $ encode mspec) >>=
+  in datadogHttp env path [] PUT (Just $ encode mspec) >>=
      decodeDatadog "updateMonitor"
 
 
@@ -354,7 +356,7 @@ updateMonitor env monitorId mspec =
 deleteMonitor :: Environment -> MonitorId -> IO ()
 deleteMonitor env monitorId =
   let path = "monitor/" ++ show monitorId
-  in void $ datadogHttp env path [] "DELETE" Nothing
+  in void $ datadogHttp env path [] DELETE Nothing
 
 
 -- | Load monitors from Datadog.
@@ -371,7 +373,7 @@ loadMonitors :: Environment
 loadMonitors env tags =
   let path = "monitor"
       query = [("tags", intercalate "," (map show tags)) | not (null tags)]
-  in datadogHttp env path query "GET" Nothing >>=
+  in datadogHttp env path query GET Nothing >>=
      decodeDatadog "loadMonitors"
 
 
@@ -379,11 +381,11 @@ loadMonitors env tags =
 muteAllMonitors :: Environment -> IO ()
 muteAllMonitors env =
   let path = "monitor/mute_all"
-  in void $ datadogHttp env path [] "POST" Nothing
+  in void $ datadogHttp env path [] POST Nothing
 
 
 -- | Allow all monitors to notify.
 unmuteAllMonitors :: Environment -> IO ()
 unmuteAllMonitors env =
   let path = "monitor/unmute_all"
-  in void $ datadogHttp env path [] "POST" Nothing
+  in void $ datadogHttp env path [] POST Nothing
