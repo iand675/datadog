@@ -17,7 +17,8 @@ import Data.Aeson
 import Data.Aeson.Types (modifyFailure, typeMismatch)
 import qualified Data.Text as T
 
-import Network.HTTP.Conduit
+import Network.HTTP.Client (Manager, newManager)
+import Network.HTTP.Client.TLS (tlsManagerSettings)
 
 import System.Environment (getEnv)
 
@@ -54,7 +55,7 @@ data Environment = Environment { envKeys :: Keys
 -- Datadog documented default API URL.
 createEnvironment :: Keys -> IO Environment
 createEnvironment keys = fmap (Environment keys "https://app.datadoghq.com/api/v1/") managerIO
-  where managerIO = newManager conduitManagerSettings
+  where managerIO = newManager tlsManagerSettings
 
 
 -- | Entity descriptor.

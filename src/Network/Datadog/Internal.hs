@@ -17,7 +17,7 @@ import Data.Text.Lazy (unpack)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text.Lazy.Encoding (decodeUtf8)
 
-import Network.HTTP.Conduit
+import Network.HTTP.Client
 
 import Network.Datadog
 

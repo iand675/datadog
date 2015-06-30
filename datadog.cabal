@@ -31,7 +31,8 @@ library
   other-extensions:    OverloadedStrings, GeneralizedNewtypeDeriving, TemplateHaskell, FunctionalDependencies, MultiParamTypeClasses, FlexibleInstances
   build-depends:       base >=4.7 && <5,
                        aeson >=0.8 && <0.10,
-                       http-conduit >=2.1 && <2.2,
+                       http-client >=0.4 && <0.5,
+                       http-client-tls >=0.2 && <0.3,
                        lens,
                        bytestring,
                        time,
