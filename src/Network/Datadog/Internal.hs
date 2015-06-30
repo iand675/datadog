@@ -23,8 +23,8 @@ import Network.Datadog
 
 
 datadogHttp :: Environment-> String -> [(String, String)] -> BS.ByteString -> Maybe LBS.ByteString -> IO LBS.ByteString
-datadogHttp (Environment keys manager) endpoint query httpMethod content = do
-  initReq <- parseUrl $ "https://app.datadoghq.com/api/v1/" ++ endpoint
+datadogHttp (Environment keys baseUrl manager) endpoint query httpMethod content = do
+  initReq <- parseUrl $ baseUrl ++ endpoint
   let body = RequestBodyLBS $ fromMaybe LBS.empty content
   let headers = [("Content-type", "application/json") | isJust content]
   let apiQuery = [("api_key", apiKey keys)

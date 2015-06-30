@@ -44,13 +44,16 @@ loadKeysFromEnv = do
 -- | An Environment contains everything needed to interact with Datadog.
 data Environment = Environment { envKeys :: Keys
                                  -- ^ Auth keys to permit communication with Datadog
+                               , envAPIUrl :: String
+                                 -- ^ The root URL for the Datadog API
                                , envManager :: Manager
                                  -- ^ HTTP manager used to make requests to Datadog
                                }
 
--- | Create a new environment using authentication keys
+-- | Create a new environment using authentication keys, defaulting to the
+-- Datadog documented default API URL.
 createEnvironment :: Keys -> IO Environment
-createEnvironment keys = fmap (Environment keys) managerIO
+createEnvironment keys = fmap (Environment keys "https://app.datadoghq.com/api/v1/") managerIO
   where managerIO = newManager conduitManagerSettings
 
 
