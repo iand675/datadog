@@ -10,18 +10,19 @@ import Distribution.TestSuite
 
 import Data.Time.Clock
 
-import Network.Datadog
+import Network.Datadog (Environment, loadKeysFromEnv, createEnvironment)
 import Network.Datadog.Host
 
 
 tests :: IO [Test]
-tests = return [Test TestInstance { run = testHostMutes
-                                  , name = "Test host muting and unmuting"
-                                  , tags = ["Host"]
-                                  , options = []
-                                  , setOption = \_ _ -> Left ""
-                                  }
-               ]
+tests = return
+  [ Test TestInstance { run = testHostMutes
+                      , name = "Test host muting and unmuting"
+                      , tags = ["Host"]
+                      , options = []
+                      , setOption = \_ _ -> Left ""
+                      }
+  ]
 
 
 environment :: IO Environment
@@ -40,7 +41,6 @@ performUnmute = do
   env <- environment
   threadDelay 1000000
   unmuteHost env "haskell-datadog-test-host"
-
 
 testHostMutes :: IO Progress
 testHostMutes = do

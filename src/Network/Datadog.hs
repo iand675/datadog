@@ -7,28 +7,35 @@ actionable insight.
 module Network.Datadog
 ( Keys(..)
 , loadKeysFromEnv
-, Environment(..)
+, Environment
 , createEnvironment
-, Tag
+, withDatadog
+, writeCredentials
+, readWriteCredentials
+, module Network.Datadog.Check
+, module Network.Datadog.Downtime
+, module Network.Datadog.Event
+, module Network.Datadog.Host
+, module Network.Datadog.Metrics
+, module Network.Datadog.Monitor
 ) where
 
 
-import Data.Aeson
-import Data.Aeson.Types (modifyFailure, typeMismatch)
 import qualified Data.Text as T
+import           Data.Text.Encoding (encodeUtf8)
 
-import Network.HTTP.Client (Manager, newManager)
+import Network.HTTP.Client (newManager, withManager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 
 import System.Environment (getEnv)
 
-
--- | Wraps the keys needed by Datadog to fully access the API.
-data Keys = Keys { apiKey :: String
-                   -- A write-key associated with a user
-                 , appKey :: String
-                   -- A read-key associated with an application
-                 } deriving (Eq)
+import Network.Datadog.Check
+import Network.Datadog.Downtime
+import Network.Datadog.Event
+import Network.Datadog.Host
+import Network.Datadog.Metrics
+import Network.Datadog.Monitor
+import Network.Datadog.Internal
 
 -- | Load Datadog keys from environment variables.
 --
@@ -41,56 +48,18 @@ loadKeysFromEnv = do
   app <- getEnv "DATADOG_APP_KEY"
   return $ Keys api app
 
-
--- | An Environment contains everything needed to interact with Datadog.
-data Environment = Environment { envKeys :: Keys
-                                 -- ^ Auth keys to permit communication with Datadog
-                               , envAPIUrl :: String
-                                 -- ^ The root URL for the Datadog API
-                               , envManager :: Manager
-                                 -- ^ HTTP manager used to make requests to Datadog
-                               }
-
 -- | Create a new environment using authentication keys, defaulting to the
 -- Datadog documented default API URL.
 createEnvironment :: Keys -> IO Environment
 createEnvironment keys = fmap (Environment keys "https://app.datadoghq.com/api/v1/") managerIO
   where managerIO = newManager tlsManagerSettings
 
+withDatadog :: DatadogCredentials k => k -> (DatadogClient k -> IO a) -> IO a
+withDatadog k f = withManager tlsManagerSettings $ \man -> f $ DatadogClient man k
 
--- | Entity descriptor.
---
--- Entities in Datadog (hosts, metrics, events, etc) are frequently associated
--- with one more more "tags". These tags are labels that identify an entity as
--- belonging to a particular group or having particular properties. A tag can
--- come in two forms: a simple text label, describing entities associated with
--- the tag, or a key-value pair, associating entities with a specific slice of
--- a larger categorization.
---
--- As strings, the key and value parts of a key-value pair are separated by a
--- (':'). As such, any tag with no colons is a label, and any tag with one (or
--- more) is a key-value pair - if more than one ':' is specified, the
--- additional ':'s will become part of the value.
-data Tag = KeyValueTag T.Text T.Text
-         | LabelTag T.Text
-         deriving (Eq)
+writeCredentials :: T.Text -> Write
+writeCredentials = Write . encodeUtf8
 
-instance Show Tag where
-  show (KeyValueTag k v) = T.unpack k ++ (':' : T.unpack v)
-  show (LabelTag t) = T.unpack t
+readWriteCredentials :: T.Text -> T.Text -> ReadWrite
+readWriteCredentials r w = ReadWrite (encodeUtf8 w) (encodeUtf8 r)
 
-instance Read Tag where
-  readsPrec _ s = let t = T.pack s
-                  in (\a -> [(a, "")]) $
-                     maybe (LabelTag t) (\i -> uncurry KeyValueTag (T.splitAt i t)) $
-                     T.findIndex (==':') t
-
-instance ToJSON Tag where
-  toJSON (KeyValueTag k v) = Data.Aeson.String $ k `T.append` (':' `T.cons` v)
-  toJSON (LabelTag t) = Data.Aeson.String t
-
-instance FromJSON Tag where
-  parseJSON (String s) = return $
-                         maybe (LabelTag s) (\i -> uncurry KeyValueTag (T.splitAt i s)) $
-                         T.findIndex (==':') s
-  parseJSON a = modifyFailure ("Tag: " ++) $ typeMismatch "String" a

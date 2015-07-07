@@ -4,19 +4,20 @@ module Test.Network.Datadog.StatsD (tests) where
 import           Control.Exception
 import           Data.Maybe
 import           Distribution.TestSuite
-import           Network.Datadog.StatsD hiding (name, tags)
+import           Network.StatsD.Datadog hiding (name, tags)
 import           Network.Socket hiding (send, sendTo, recv, recvFrom)
 import           Network.Socket.ByteString hiding (send)
 import           System.Timeout
 
 tests :: IO [Test]
-tests = return [Test TestInstance { run = testSend
-                                  , name = "Test sending DogStatsD data to a local server"
-                                  , tags = ["StatsD"]
-                                  , options = []
-                                  , setOption = \_ _ -> Left ""
-                                  }
-               ]
+tests = return
+  [ Test TestInstance { run = testSend
+                      , name = "Test sending DogStatsD data to a local server"
+                      , tags = ["StatsD"]
+                      , options = []
+                      , setOption = \_ _ -> Left ""
+                      }
+  ]
 
 makeServer :: IO Socket
 makeServer = do
@@ -35,3 +36,4 @@ testSend = bracket makeServer sClose $ \conn -> do
   return $ Finished $ if isJust val
                       then Pass
                       else Fail "Did not receive DogStatsD event"
+

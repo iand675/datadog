@@ -5,14 +5,14 @@ module Test.Network.Datadog.Event (tests) where
 
 import Control.Concurrent (threadDelay)
 import Control.Exception
+import Control.Lens
 
 import Distribution.TestSuite
 
 import Data.Time.Clock
 
-import Network.Datadog
-import Network.Datadog.Event
-
+import Network.Datadog (Environment, loadKeysFromEnv, createEnvironment)
+import Network.Datadog.Event hiding (tags)
 
 tests :: IO [Test]
 tests = return [Test TestInstance { run = testEventCycle
@@ -32,16 +32,15 @@ testEventCycle :: IO Progress
 testEventCycle = do
   env <- environment
   time <- getCurrentTime
-  let eventDetails = minimalEventSpec
-                     "Datadog Test Event"
-                     "This is a test for the Haskell Datadog API."
-                     time
-                     NormalPriority
+  let testDetails = minimalEventSpec "Datadog Test Event"
+                                     "This is a test for the Haskell Datadog API."
+                                     time
+                                     NormalPriority
   let computation = do
         threadDelay 500000
-        event1 <- createEvent env eventDetails
+        event1 <- createEvent env testDetails
         threadDelay 10000000
-        event2 <- loadEvent env (eId event1)
+        event2 <- loadEvent env (event1 ^. id')
         threadDelay 500000
         events <- loadEvents env (addUTCTime (-60) time, addUTCTime 60 time) Nothing []
         return (if event1 /= event2

@@ -18,7 +18,6 @@ import Data.Time.Clock.POSIX
 
 import Network.HTTP.Types
 
-import Network.Datadog
 import Network.Datadog.Internal
 
 
@@ -26,12 +25,12 @@ muteHost :: Environment -> Text -> Maybe UTCTime -> Bool -> IO ()
 -- ^ Do not allow alerts to trigger on a specific host
 muteHost env hostname mtime override =
   let path = "host/" ++ unpack hostname ++ "/mute"
-      query = [("override", "true") | override]
+      q = [("override", "true") | override]
       body = object $
              prependMaybe (\a -> "end" .= (ceiling (utcTimeToPOSIXSeconds a) :: Integer)) mtime $
              prependBool override ("override" .= True)
              ["hostname" .= hostname]
-  in void $ datadogHttp env path query POST $ Just $ encode body
+  in void $ datadogHttp env path q POST $ Just $ encode body
 
 
 unmuteHost :: Environment -> Text -> IO ()
