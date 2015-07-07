@@ -6,7 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
-module Network.Datadog.StatsD (
+module Network.StatsD.Datadog (
   -- * Client interface
   DogStatsSettings(..),
   defaultSettings,
