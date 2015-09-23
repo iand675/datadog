@@ -7,6 +7,7 @@
 {-# LANGUAGE TemplateHaskell            #-}
 module Network.Datadog.Types where
 import           Control.Lens.TH
+import           Data.Aeson (Value)
 import           Data.ByteString.Char8 (ByteString)
 import           Data.DList (DList)
 import           Data.HashMap.Strict (HashMap)
@@ -281,6 +282,31 @@ data Monitor = Monitor { monitorId' :: MonitorId
                          -- re-created.
                        } deriving (Eq)
 
+data TimeboardGraph = TimeboardGraph { timeboardGraphTitle :: T.Text
+                                     , timeboardGraphDefinition :: Value
+                                     } deriving (Eq)
+
+data TimeboardVariable = TimeboardVariable { timeboardVariableName :: T.Text
+                                           , timeboardVariablePrefix :: Maybe T.Text
+                                           , timeboardVariableDefault' :: Maybe T.Text
+                                           } deriving (Eq)
+
+data TimeboardSpec = TimeboardSpec { timeboardSpecTitle :: T.Text
+                                   , timeboardSpecDescription :: T.Text
+                                   , timeboardSpecGraphs :: [TimeboardGraph]
+                                   , timeboardSpecVariables :: [TimeboardVariable]
+                                   } deriving (Eq)
+
+type TimeboardId = Int
+
+data Timeboard = Timeboard { timeboardId' :: TimeboardId
+                           , timeboardSpec :: TimeboardSpec
+                           } deriving (Eq)
+
+data WrappedTimeboard = WrappedTimeboard { wrappedTimeboard :: Timeboard } deriving (Eq)
+
+data WrappedTimeboards = WrappedTimeboards { wrappedTimeboards :: [Timeboard] } deriving (Eq)
+
 makeFields ''CheckResult
 makeFields ''DowntimeSpec
 makeFields ''Downtime
@@ -290,6 +316,10 @@ makeFields ''Metric
 makeFields ''MonitorOptions
 makeFields ''MonitorSpec
 makeFields ''Monitor
+makeFields ''TimeboardGraph
+makeFields ''TimeboardVariable
+makeFields ''TimeboardSpec
+makeFields ''Timeboard
 makeClassyPrisms ''Tag
 makeClassyPrisms ''CheckStatus
 makeClassyPrisms ''EventPriority
@@ -297,4 +327,3 @@ makeClassyPrisms ''AlertType
 makeClassyPrisms ''SourceType
 makeClassyPrisms ''MetricPoints
 makeClassyPrisms ''MonitorType
-

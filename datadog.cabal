@@ -23,7 +23,8 @@ library
                        Network.Datadog.Event,
                        Network.Datadog.Host,
                        Network.Datadog.Monitor,
-                       Network.Datadog.Types
+                       Network.Datadog.Timeboard,
+                       Network.Datadog.Types,
                        Network.Datadog.Internal,
                        Network.StatsD.Datadog
                        -- Datadog.Metrics,
@@ -61,8 +62,10 @@ test-suite datadog-api-test
                        Test.Network.Datadog.Event,
                        Test.Network.Datadog.Host,
                        Test.Network.Datadog.Monitor,
+                       Test.Network.Datadog.Timeboard,
                        Test.Network.Datadog.StatsD
   build-depends:       base >=4.8 && <4.9,
+                       aeson >=0.8 && <0.10,
                        Cabal >=1.9.2,
                        datadog,
                        network,

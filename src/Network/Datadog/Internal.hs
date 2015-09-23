@@ -362,3 +362,65 @@ instance FromJSON Monitor where
                          Monitor <$> v .: "id" <*> parseJSON (Object v)
   parseJSON a = modifyFailure ("Monitor: " ++) $ typeMismatch "Object" a
 
+
+instance ToJSON TimeboardGraph where
+  toJSON tg = object ["title" .= (tg ^. title)
+                     ,"definition" .= (tg ^. definition)
+                     ]
+
+instance FromJSON TimeboardGraph where
+  parseJSON (Object v) = modifyFailure ("TimeboardGraph: " ++) $
+                         TimeboardGraph <$>
+                         v .: "title" <*>
+                         v .: "definition"
+  parseJSON a = modifyFailure ("TimeboardGraph: " ++) $ typeMismatch "Object" a
+
+instance ToJSON TimeboardVariable where
+  toJSON tv = object $
+              prependMaybe ("prefix" .=) (tv ^. prefix) $
+              prependMaybe ("default" .=) (tv ^. default')
+              ["name" .= (tv ^. name)]
+
+instance FromJSON TimeboardVariable where
+  parseJSON (Object v) = modifyFailure ("TimeboardVariable: " ++) $
+                         TimeboardVariable <$>
+                         v .: "name" <*>
+                         v .:? "prefix" .!= Nothing <*>
+                         v .:? "default" .!= Nothing
+  parseJSON a = modifyFailure ("TimeboardVariable: " ++) $ typeMismatch "Object" a
+
+instance ToJSON TimeboardSpec where
+  toJSON ts = object ["title" .= (ts ^. title)
+                     ,"description" .= (ts ^. description)
+                     ,"graphs" .= (ts ^. graphs)
+                     ,"template_variables" .= (ts ^. variables)
+                     ]
+
+instance FromJSON TimeboardSpec where
+  parseJSON (Object v) = modifyFailure ("TimeboardSpec: " ++) $
+                         TimeboardSpec <$>
+                         v .: "title" <*>
+                         v .: "description" <*>
+                         v .:? "graphs" .!= [] <*>
+                         v .:? "template_variables" .!= []
+  parseJSON a = modifyFailure ("TimeboardSpec: " ++) $ typeMismatch "Object" a
+
+instance ToJSON Timeboard where
+  toJSON timeboard = Object $ HM.insert "id" (toJSON (timeboard ^. id')) basemap
+    where (Object basemap) = toJSON (timeboard ^. spec)
+
+instance FromJSON Timeboard where
+  parseJSON (Object v) = modifyFailure ("Timeboard: " ++) $
+                         Timeboard <$> v .: "id" <*> parseJSON (Object v)
+  parseJSON a = modifyFailure ("Timeboard: " ++) $ typeMismatch "Object" a
+
+
+instance FromJSON WrappedTimeboard where
+  parseJSON (Object v) = modifyFailure ("WrappedTimeboard: " ++) $
+                         WrappedTimeboard <$> v .: "dash"
+  parseJSON a = modifyFailure ("WrappedTimeboard: " ++) $ typeMismatch "Object" a
+
+instance FromJSON WrappedTimeboards where
+  parseJSON (Object v) = modifyFailure ("WrappedTimeboards: " ++) $
+                         WrappedTimeboards <$> v .: "dashes"
+  parseJSON a = modifyFailure ("WrappedTimeboards: " ++) $ typeMismatch "Object" a
