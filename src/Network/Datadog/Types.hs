@@ -231,11 +231,15 @@ data MonitorType = MetricAlert
                  | ServiceCheck
                    -- ^ Watches a service and alerts when the service enters a
                    -- failing state.
+                 | EventAlert
+                   -- ^ Checks the event stream for events meeting certain
+                   -- criteria.
                  deriving (Eq)
 
 instance Show MonitorType where
   show MetricAlert = "metric alert"
   show ServiceCheck = "service check"
+  show EventAlert = "event alert"
 
 -- | Advanced configuration parameters for a monitor.
 data MonitorOptions = MonitorOptions { monitorOptionsSilenced :: HashMap T.Text (Maybe Integer)

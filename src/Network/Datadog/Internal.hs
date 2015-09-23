@@ -275,12 +275,14 @@ instance ToJSON Metric where
 instance ToJSON MonitorType where
   toJSON MetricAlert = Data.Aeson.String "metric alert"
   toJSON ServiceCheck = Data.Aeson.String "service check"
+  toJSON EventAlert = Data.Aeson.String "event alert"
 
 instance FromJSON MonitorType where
   parseJSON (Data.Aeson.String "metric alert") = return MetricAlert
   -- TODO figure out what "query alert" actually is
   parseJSON (Data.Aeson.String "query alert") = return MetricAlert
   parseJSON (Data.Aeson.String "service check") = return ServiceCheck
+  parseJSON (Data.Aeson.String "event alert") = return EventAlert
   parseJSON (Data.Aeson.String s) = fail $ "MonitorType: String " ++ show s ++ " is not a valid MonitorType"
   parseJSON a = modifyFailure ("MonitorType: " ++) $ typeMismatch "String" a
 
