@@ -287,7 +287,8 @@ instance FromJSON MonitorType where
   parseJSON a = modifyFailure ("MonitorType: " ++) $ typeMismatch "String" a
 
 instance ToJSON MonitorOptions where
-  toJSON opts = Object $ HM.fromList [ ("notify_no_data", Bool (opts ^. notifyNoData))
+  toJSON opts = Object $ HM.fromList [ ("silenced", toJSON (opts ^. silenced))
+                                     , ("notify_no_data", Bool (opts ^. notifyNoData))
                                      , ("no_data_timeframe", maybe Null (Number . fromIntegral) (opts ^. noDataTimeframe))
                                      , ("timeout_h", maybe Null (Number . fromIntegral) (opts ^. timeoutH))
                                      , ("renotify_interval", maybe Null (Number . fromIntegral) (opts ^. renotifyInterval))
