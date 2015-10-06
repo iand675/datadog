@@ -17,6 +17,7 @@ module Network.Datadog.Internal
 import Control.Arrow (first)
 import Control.Exception
 import Control.Lens hiding ((.=), cons)
+import Control.Monad (mplus)
 
 import Data.Aeson hiding (Success, Error)
 import Data.Aeson.Types (modifyFailure, typeMismatch)
@@ -411,7 +412,10 @@ instance ToJSON Timeboard where
 
 instance FromJSON Timeboard where
   parseJSON (Object v) = modifyFailure ("Timeboard: " ++) $
-                         Timeboard <$> v .: "id" <*> parseJSON (Object v)
+                         Timeboard <$>
+                         -- handle case where ID is a string instead of int
+                         ((read <$> (v .: "id")) `mplus` (v .: "id")) <*>
+                         parseJSON (Object v)
   parseJSON a = modifyFailure ("Timeboard: " ++) $ typeMismatch "Object" a
 
 
