@@ -13,7 +13,7 @@ module Network.Datadog.Timeboard
 , updateTimeboard
 , deleteTimeboard
 , loadTimeboard
-, loadTimeboards
+, loadTimeboardSummaries
 , HasId'(..)
 , HasSpec(..)
 , HasTitle(..)
@@ -69,9 +69,9 @@ deleteTimeboard env timeboardId =
 
 
 -- | Load all timeboard from Datadog.
-loadTimeboards :: Environment -> IO [Timeboard]
-loadTimeboards env =
+loadTimeboardSummaries :: Environment -> IO [TimeboardSummary]
+loadTimeboardSummaries env =
   let path = "dash"
-  in liftM wrappedTimeboards $
+  in liftM wrappedTimeboardSummaries $
      datadogHttp env path [] GET Nothing >>=
-     decodeDatadog "loadTimeboards"
+     decodeDatadog "loadTimeboardSummaries"

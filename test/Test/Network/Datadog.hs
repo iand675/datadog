@@ -9,6 +9,7 @@ import qualified Test.Network.Datadog.Downtime as Downtime (tests)
 import qualified Test.Network.Datadog.Event as Event (tests)
 import qualified Test.Network.Datadog.Monitor as Monitor (tests)
 import qualified Test.Network.Datadog.Host as Host (tests)
+import qualified Test.Network.Datadog.Timeboard as Timeboard (tests)
 
 
 tests :: IO [Test]
@@ -20,4 +21,5 @@ tests = map (\(s,t) -> Group s False t)
         ,("Event", Event.tests)
         ,("Host", Host.tests)
         ,("Monitor", Monitor.tests)
+        ,("Timeboard", Timeboard.tests)
         ]

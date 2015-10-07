@@ -418,13 +418,21 @@ instance FromJSON Timeboard where
                          parseJSON (Object v)
   parseJSON a = modifyFailure ("Timeboard: " ++) $ typeMismatch "Object" a
 
-
 instance FromJSON WrappedTimeboard where
   parseJSON (Object v) = modifyFailure ("WrappedTimeboard: " ++) $
                          WrappedTimeboard <$> v .: "dash"
   parseJSON a = modifyFailure ("WrappedTimeboard: " ++) $ typeMismatch "Object" a
 
-instance FromJSON WrappedTimeboards where
-  parseJSON (Object v) = modifyFailure ("WrappedTimeboards: " ++) $
-                         WrappedTimeboards <$> v .: "dashes"
-  parseJSON a = modifyFailure ("WrappedTimeboards: " ++) $ typeMismatch "Object" a
+instance FromJSON TimeboardSummary where
+  parseJSON (Object v) = modifyFailure ("TimeboardSummary: " ++) $
+                         TimeboardSummary <$>
+                         -- handle case where ID is a string instead of int
+                         ((read <$> (v .: "id")) `mplus` (v .: "id")) <*>
+                         v .: "title" <*>
+                         v .: "description"
+  parseJSON a = modifyFailure ("TimeboardSummary: " ++) $ typeMismatch "Object" a
+
+instance FromJSON WrappedTimeboardSummaries where
+  parseJSON (Object v) = modifyFailure ("WrappedTimeboardSummaries: " ++) $
+                         WrappedTimeboardSummaries <$> v .: "dashes"
+  parseJSON a = modifyFailure ("WrappedTimeboardSummaries: " ++) $ typeMismatch "Object" a

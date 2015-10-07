@@ -305,7 +305,12 @@ data Timeboard = Timeboard { timeboardId' :: TimeboardId
 
 data WrappedTimeboard = WrappedTimeboard { wrappedTimeboard :: Timeboard } deriving (Eq)
 
-data WrappedTimeboards = WrappedTimeboards { wrappedTimeboards :: [Timeboard] } deriving (Eq)
+data TimeboardSummary = TimeboardSummary { timeboardSummaryId' :: TimeboardId
+                                         , timeboardSummaryTitle :: T.Text
+                                         , timeboardSummaryDescription :: T.Text
+                                         } deriving (Eq)
+
+data WrappedTimeboardSummaries = WrappedTimeboardSummaries { wrappedTimeboardSummaries :: [TimeboardSummary] } deriving (Eq)
 
 makeFields ''CheckResult
 makeFields ''DowntimeSpec
@@ -320,6 +325,7 @@ makeFields ''TimeboardGraph
 makeFields ''TimeboardVariable
 makeFields ''TimeboardSpec
 makeFields ''Timeboard
+makeFields ''TimeboardSummary
 makeClassyPrisms ''Tag
 makeClassyPrisms ''CheckStatus
 makeClassyPrisms ''EventPriority

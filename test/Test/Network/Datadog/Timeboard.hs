@@ -45,13 +45,13 @@ testTimeboardCycle = do
         threadDelay 500000
         timeboard3 <- loadTimeboard env (timeboard1 ^. id')
         threadDelay 500000
-        timeboards <- loadTimeboards env
+        timeboardSummaries <- loadTimeboardSummaries env
         threadDelay 500000
         deleteTimeboard env (timeboard1 ^. id')
         return (if timeboard2 /= timeboard3
                 then Finished (Fail "Updated and fetched timeboards are not identical")
-                else if timeboard2 `notElem` timeboards
-                     then Finished (Fail (if timeboard1 `elem` timeboards
+                else if (timeboardUpdatedDetails ^. description) `notElem` (map (^. description) timeboardSummaries)
+                     then Finished (Fail (if ((timeboard1 ^. spec) ^. description) `elem` (map (^. description) timeboardSummaries)
                                           then "Created timeboard not updated (in group load)"
                                           else "Updated timeboard not fetched from group load"))
                      else Finished Pass
