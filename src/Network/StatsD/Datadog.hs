@@ -12,7 +12,7 @@ module Network.StatsD.Datadog (
   defaultSettings,
   withDogStatsD,
   send,
-  -- * Data supported by DogStatsD 
+  -- * Data supported by DogStatsD
   metric,
   Metric,
   MetricName(..),
@@ -26,7 +26,7 @@ module Network.StatsD.Datadog (
   -- * Optional fields
   Tag,
   tag,
-  ToMetricValue,
+  ToMetricValue(..),
   value,
   Priority(..),
   AlertType(..),
@@ -393,4 +393,3 @@ send Dummy _ = return ()
 finalizeStatsClient :: StatsClient -> IO ()
 finalizeStatsClient (StatsClient h r) = reaperStop r >>= F.mapM_ (B.hPut h . runUtf8Builder)
 finalizeStatsClient Dummy = return ()
-
