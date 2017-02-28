@@ -13,7 +13,7 @@ module Network.Datadog.Metrics
   , AsMetricPoints(..)
   ) where
 import Control.Monad (void)
-import Data.Aeson
+import Data.Aeson hiding (Series)
 import Data.DList
 import qualified Network.HTTP.Types  as HTTP
 import qualified Network.HTTP.Client as C
