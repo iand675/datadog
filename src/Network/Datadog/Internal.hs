@@ -18,7 +18,7 @@ import Control.Arrow (first)
 import Control.Exception
 import Control.Lens hiding ((.=), cons)
 
-import Data.Aeson hiding (Success, Error)
+import Data.Aeson hiding (Series, Success, Error)
 import Data.Aeson.Types (modifyFailure, typeMismatch)
 import qualified Data.ByteString.Lazy as LBS (ByteString, empty)
 import qualified Data.DList as D
@@ -361,4 +361,3 @@ instance FromJSON Monitor where
   parseJSON (Object v) = modifyFailure ("Monitor: " ++ ) $
                          Monitor <$> v .: "id" <*> parseJSON (Object v)
   parseJSON a = modifyFailure ("Monitor: " ++) $ typeMismatch "Object" a
-
