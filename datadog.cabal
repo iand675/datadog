@@ -34,20 +34,20 @@ library
                        aeson >=0.8 && <0.12,
                        http-client >=0.4 && <0.5,
                        http-client-tls >=0.2 && <0.3,
-                       http-types >=0.8 && <0.9,
+                       http-types >=0.8 && <=0.10,
                        lens,
                        bytestring,
                        time,
                        text,
                        old-locale,
-                       buffer-builder ==0.2.*,
+                       buffer-builder >=0.2 && <0.3,
                        auto-update,
                        network,
                        monad-control ==1.*,
                        lifted-base,
                        transformers-base,
                        unordered-containers >=0.2 && <0.3,
-                       vector >=0.10 && <0.11,
+                       vector >=0.10 && <0.12,
                        dlist
   hs-source-dirs:      src
   default-language:    Haskell2010
@@ -66,7 +66,7 @@ test-suite datadog-api-test
                        Cabal >=1.9.2,
                        datadog,
                        network,
-                       time >=1.5 && <1.6,
+                       time >=1.5 && <1.7,
                        lens
   hs-source-dirs:      test
   default-language:    Haskell2010
