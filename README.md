@@ -1,4 +1,4 @@
-** :zap: WAI middleware for tracking metrics in Datadog :dog2: :zap: **
+### :zap: WAI middleware for tracking metrics in Datadog :dog2: :zap:
 
 dd-middleware provides a simple middleware for shoving metrics from WAI
 requests to Datadog. Out of the box, it times all request/response
