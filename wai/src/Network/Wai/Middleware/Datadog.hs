@@ -84,18 +84,18 @@ rtsStatReporter client ts = do
     scg "rts.gc.current_bytes_used" Gauge $ toInt currentBytesUsed
     scg "rts.gc.current_bytes_slop" Gauge $ toInt currentBytesSlop
 
-datadogMiddleware :: Clock -> [Tag] -> StatsClient -> Middleware
-datadogMiddleware clock defaultTags client app req responder = do
+datadogMiddleware :: [Tag] -> StatsClient -> Middleware
+datadogMiddleware defaultTags client app req responder = do
   tsRef <- newIORef defaultTags
   let vault' = insert statsTagsKey tsRef $ insert statsClientKey client $ vault req
       req' = req { vault = vault' }
-  startTime <- getTime clock
+  startTime <- getTime Monotonic
   app req' $ \resp -> do
     r <- responder resp
     case resp of
       ResponseRaw{} -> return ()
       _ -> do
-        endTime <- getTime clock
+        endTime <- getTime Monotonic
         let millis = case (endTime - startTime) of
               TimeSpec{..} -> fromIntegral ((sec * 1000) + (nsec `div` 1000000)) :: Int
         ts <- readIORef tsRef
