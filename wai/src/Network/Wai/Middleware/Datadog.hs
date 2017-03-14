@@ -97,7 +97,7 @@ datadogMiddleware defaultTags client app req responder = do
       _ -> do
         endTime <- getTime Monotonic
         let millis = case (endTime - startTime) of
-              TimeSpec{..} -> fromIntegral ((sec * 1000) + (nsec `div` 1000000)) :: Int
+              TimeSpec{..} -> fromIntegral ((sec * 1000) + round (fromIntegral nsec / 1000000)) :: Int
         ts <- readIORef tsRef
         send client (metric responseTime Timer millis & tags .~ ts)
     return r
