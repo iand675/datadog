@@ -11,6 +11,8 @@ module Network.StatsD.Datadog (
   DogStatsSettings(..),
   defaultSettings,
   withDogStatsD,
+  mkStatsClient,
+  finalizeStatsClient,
   send,
   -- * Data supported by DogStatsD
   metric,
@@ -343,31 +345,34 @@ makeFields ''DogStatsSettings
 defaultSettings :: DogStatsSettings
 defaultSettings = DogStatsSettings "127.0.0.1" 8125
 
+mkStatsClient :: MonadBase IO m => DogStatsSettings -> m StatsClient
+mkStatsClient s = liftBase $ do
+  addrInfos <- getAddrInfo
+               (Just $ defaultHints { addrFlags = [AI_PASSIVE] })
+               (Just $ s ^. host)
+               (Just $ show $ s ^. port)
+  case addrInfos of
+    [] -> error "No address for hostname" -- TODO throw
+    (serverAddr:_) -> do
+      sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
+      connect sock (addrAddress serverAddr)
+      h <- socketToHandle sock WriteMode
+      hSetBuffering h LineBuffering
+      let builderAction work = do
+            F.mapM_ (B.hPut h . runUtf8Builder) work
+            return $ const Nothing
+          reaperSettings = defaultReaperSettings { reaperAction = builderAction
+                                                 , reaperDelay = 1000000 -- one second
+                                                 , reaperCons = \item work -> Just $ maybe item (>> item) work
+                                                 , reaperNull = isNothing
+                                                 , reaperEmpty = Nothing
+                                                 }
+      r <- mkReaper reaperSettings
+      return $ StatsClient h r
+
 withDogStatsD :: MonadBaseControl IO m => DogStatsSettings -> (StatsClient -> m a) -> m a
-withDogStatsD s f = do
-     let setup = do
-           addrInfos <- getAddrInfo (Just $ defaultHints { addrFlags = [AI_PASSIVE] })
-                                    (Just $ s ^. host)
-                                    (Just $ show $ s ^. port)
-           case addrInfos of
-             [] -> error "No address for hostname" -- TODO throw
-             (serverAddr:_) -> do
-               sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
-               connect sock (addrAddress serverAddr)
-               h <- socketToHandle sock WriteMode
-               hSetBuffering h LineBuffering
-               let builderAction work = do
-                     F.mapM_ (B.hPut h . runUtf8Builder) work
-                     return $ const Nothing
-                   reaperSettings = defaultReaperSettings { reaperAction = builderAction
-                                                          , reaperDelay = 1000000 -- one second
-                                                          , reaperCons = \item work -> Just $ maybe item (>> item) work
-                                                          , reaperNull = isNothing
-                                                          , reaperEmpty = Nothing
-                                                          }
-               r <- mkReaper reaperSettings
-               return $ StatsClient h r
-     liftBaseOp (bracket setup (\c -> finalizeStatsClient c >> hClose (statsClientHandle c))) f
+withDogStatsD s f = liftBaseOp
+  (bracket (mkStatsClient s) (\c -> finalizeStatsClient c >> hClose (statsClientHandle c))) f
 
 -- | Note that Dummy is not the only constructor, just the only publicly available one.
 data StatsClient = StatsClient
