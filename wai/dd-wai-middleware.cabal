@@ -10,7 +10,7 @@ maintainer:          ian@iankduncan.com
 copyright:           Ian Duncan
 category:            Web
 build-type:          Simple
-extra-source-files:  README.md
+extra-source-files:
 cabal-version:       >=1.10
 
 library
