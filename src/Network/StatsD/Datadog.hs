@@ -1,17 +1,19 @@
 {-| DogStatsD accepts custom application metrics points over UDP, and then periodically aggregates and forwards the metrics to Datadog, where they can be graphed on dashboards. The data is sent by using a client library such as this one that communicates with a DogStatsD server. -}
 
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE TemplateHaskell        #-}
 module Network.StatsD.Datadog (
   -- * Client interface
   DogStatsSettings(..),
   defaultSettings,
   withDogStatsD,
-  send,
+  createStatcClient,
+  closeStatsClient,
+  send, sendIO,
   -- * Data supported by DogStatsD
   metric,
   Metric,
@@ -49,29 +51,33 @@ module Network.StatsD.Datadog (
   -- * Dummy client
   StatsClient(Dummy)
 ) where
-import Control.Applicative ((<$>))
-import Control.Exception (bracket)
-import Control.Lens
-import Control.Monad.Base
-import Control.Monad.Trans.Control
-import Control.Reaper
-import Data.BufferBuilder.Utf8
-import Data.List (intersperse)
-import Data.Monoid
-import Data.Maybe (isNothing)
-import Data.Int
-import Data.Word
-import qualified Data.ByteString as B
-import qualified Data.Foldable as F
-import Data.Text (Text)
-import qualified Data.Text as T
-import Data.Time.Clock
-import Data.Time.Clock.POSIX
-import Data.Time.Format
-import Data.Text.Encoding (encodeUtf8)
-import Data.ByteString.Short hiding (empty)
-import Network.Socket hiding (send, sendTo, recv, recvFrom)
-import System.IO (hClose, hSetBuffering, BufferMode(LineBuffering), IOMode(WriteMode), Handle)
+import           Control.Applicative         ((<$>))
+import           Control.Exception           (bracket)
+import           Control.Lens
+import           Control.Monad.Base
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Control
+import           Control.Reaper
+import           Data.BufferBuilder.Utf8
+import qualified Data.ByteString             as B
+import           Data.ByteString.Short       hiding (empty)
+import qualified Data.Foldable               as F
+import           Data.Int
+import           Data.List                   (intersperse)
+import           Data.Maybe                  (isNothing)
+import           Data.Monoid
+import           Data.Text                   (Text)
+import qualified Data.Text                   as T
+import           Data.Text.Encoding          (encodeUtf8)
+import           Data.Time.Clock
+import           Data.Time.Clock.POSIX
+import           Data.Time.Format
+import           Data.Word
+import           Network.Socket              hiding (recv, recvFrom, send,
+                                              sendTo)
+import           System.IO                   (BufferMode (LineBuffering),
+                                              Handle, IOMode (WriteMode),
+                                              hClose, hSetBuffering)
 
 epochTime :: UTCTime -> Int
 epochTime = round . utcTimeToPOSIXSeconds
@@ -334,8 +340,8 @@ instance ToStatsD ServiceCheck where
         sequence_ $ intersperse (appendChar7 ',') $ map fromTag ts
 
 data DogStatsSettings = DogStatsSettings
-  { dogStatsSettingsHost     :: HostName -- ^ The hostname or IP of the DogStatsD server (default: 127.0.0.1)
-  , dogStatsSettingsPort     :: Int      -- ^ The port that the DogStatsD server is listening on (default: 8125)
+  { dogStatsSettingsHost :: HostName -- ^ The hostname or IP of the DogStatsD server (default: 127.0.0.1)
+  , dogStatsSettingsPort :: Int      -- ^ The port that the DogStatsD server is listening on (default: 8125)
   }
 
 makeFields ''DogStatsSettings
@@ -343,31 +349,35 @@ makeFields ''DogStatsSettings
 defaultSettings :: DogStatsSettings
 defaultSettings = DogStatsSettings "127.0.0.1" 8125
 
-withDogStatsD :: MonadBaseControl IO m => DogStatsSettings -> (StatsClient -> m a) -> m a
-withDogStatsD s f = do
-     let setup = do
-           addrInfos <- getAddrInfo (Just $ defaultHints { addrFlags = [AI_PASSIVE] })
+createStatcClient :: MonadIO m => DogStatsSettings -> m StatsClient
+createStatcClient s = liftIO $ do
+  addrInfos <- getAddrInfo (Just $ defaultHints { addrFlags = [AI_PASSIVE] })
                                     (Just $ s ^. host)
                                     (Just $ show $ s ^. port)
-           case addrInfos of
-             [] -> error "No address for hostname" -- TODO throw
-             (serverAddr:_) -> do
-               sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
-               connect sock (addrAddress serverAddr)
-               h <- socketToHandle sock WriteMode
-               hSetBuffering h LineBuffering
-               let builderAction work = do
-                     F.mapM_ (B.hPut h . runUtf8Builder) work
-                     return $ const Nothing
-                   reaperSettings = defaultReaperSettings { reaperAction = builderAction
-                                                          , reaperDelay = 1000000 -- one second
-                                                          , reaperCons = \item work -> Just $ maybe item (>> item) work
-                                                          , reaperNull = isNothing
-                                                          , reaperEmpty = Nothing
-                                                          }
-               r <- mkReaper reaperSettings
-               return $ StatsClient h r
-     liftBaseOp (bracket setup (\c -> finalizeStatsClient c >> hClose (statsClientHandle c))) f
+  case addrInfos of
+    [] -> error "No address for hostname" -- TODO throw
+    (serverAddr:_) -> do
+      sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
+      connect sock (addrAddress serverAddr)
+      h <- socketToHandle sock WriteMode
+      hSetBuffering h LineBuffering
+      let builderAction work = do
+            F.mapM_ (B.hPut h . runUtf8Builder) work
+            return $ const Nothing
+          reaperSettings = defaultReaperSettings { reaperAction = builderAction
+                                                , reaperDelay = 1000000 -- one second
+                                                , reaperCons = \item work -> Just $ maybe item (>> item) work
+                                                , reaperNull = isNothing
+                                                , reaperEmpty = Nothing
+                                                }
+      r <- mkReaper reaperSettings
+      return $ StatsClient h r
+
+closeStatsClient :: MonadIO m => StatsClient -> m ()
+closeStatsClient c = liftIO $ finalizeStatsClient c >> hClose (statsClientHandle c)
+
+withDogStatsD :: MonadBaseControl IO m => DogStatsSettings -> (StatsClient -> m a) -> m a
+withDogStatsD s = liftBaseOp (bracket (createStatcClient s) closeStatsClient)
 
 -- | Note that Dummy is not the only constructor, just the only publicly available one.
 data StatsClient = StatsClient
@@ -389,6 +399,13 @@ send :: (MonadBase IO m, ToStatsD v) => StatsClient -> v -> m ()
 send (StatsClient _ r) v = liftBase $ reaperAdd r (toStatsD v >> appendChar7 '\n')
 send Dummy _ = return ()
 {-# INLINEABLE send #-}
+
+sendIO :: (MonadIO m, ToStatsD v) => StatsClient -> v -> m ()
+sendIO (StatsClient _ r) v = liftIO $ reaperAdd r (toStatsD v >> appendChar7 '\n')
+sendIO Dummy _ = return ()
+{-# INLINEABLE sendIO #-}
+
+
 
 finalizeStatsClient :: StatsClient -> IO ()
 finalizeStatsClient (StatsClient h r) = reaperStop r >>= F.mapM_ (B.hPut h . runUtf8Builder)
