@@ -1,10 +1,11 @@
-resolver: lts-8.11
+resolver: lts-7.19
 
 packages:
 - '.'
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
-extra-deps: []
+extra-deps:
+  - buffer-builder-0.2.4.4
 
 # Override default flag values for local packages and extra-deps
 flags: {}
