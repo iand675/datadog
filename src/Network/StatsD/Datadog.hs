@@ -11,7 +11,7 @@ module Network.StatsD.Datadog (
   DogStatsSettings(..),
   defaultSettings,
   withDogStatsD,
-  createStatcClient,
+  createStatsClient,
   closeStatsClient,
   send, sendIO,
   -- * Data supported by DogStatsD
@@ -349,8 +349,8 @@ makeFields ''DogStatsSettings
 defaultSettings :: DogStatsSettings
 defaultSettings = DogStatsSettings "127.0.0.1" 8125
 
-createStatcClient :: MonadIO m => DogStatsSettings -> m StatsClient
-createStatcClient s = liftIO $ do
+createStatsClient :: MonadIO m => DogStatsSettings -> m StatsClient
+createStatsClient s = liftIO $ do
   addrInfos <- getAddrInfo (Just $ defaultHints { addrFlags = [AI_PASSIVE] })
                                     (Just $ s ^. host)
                                     (Just $ show $ s ^. port)
@@ -377,7 +377,7 @@ closeStatsClient :: MonadIO m => StatsClient -> m ()
 closeStatsClient c = liftIO $ finalizeStatsClient c >> hClose (statsClientHandle c)
 
 withDogStatsD :: MonadBaseControl IO m => DogStatsSettings -> (StatsClient -> m a) -> m a
-withDogStatsD s = liftBaseOp (bracket (createStatcClient s) closeStatsClient)
+withDogStatsD s = liftBaseOp (bracket (createStatsClient s) closeStatsClient)
 
 -- | Note that Dummy is not the only constructor, just the only publicly available one.
 data StatsClient = StatsClient
