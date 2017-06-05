@@ -10,10 +10,9 @@ module Network.StatsD.Datadog (
   -- * Client interface
   DogStatsSettings(..),
   defaultSettings,
-  withDogStatsD,
   createStatsClient,
   closeStatsClient,
-  send, sendIO,
+  send, sendSampled,
   -- * Data supported by DogStatsD
   metric,
   Metric,
@@ -27,9 +26,13 @@ module Network.StatsD.Datadog (
   ToStatsD,
   -- * Optional fields
   Tag,
-  tag,
+  envTag, tag, tagged,
+  sampled, sampled',
+  incCounter, addCounter,
+  gauge, timer, histogram,
   ToMetricValue(..),
   value,
+  SampleRate(..),
   Priority(..),
   AlertType(..),
   HasName(..),
@@ -51,38 +54,35 @@ module Network.StatsD.Datadog (
   -- * Dummy client
   StatsClient(Dummy)
 ) where
-import           Control.Applicative         ((<$>))
-import           Control.Exception           (bracket)
+import           Control.Applicative     ((<$>))
 import           Control.Lens
-import           Control.Monad.Base
+import           Control.Monad           (when)
 import           Control.Monad.IO.Class
-import           Control.Monad.Trans.Control
 import           Control.Reaper
 import           Data.BufferBuilder.Utf8
-import qualified Data.ByteString             as B
-import           Data.ByteString.Short       hiding (empty)
-import qualified Data.Foldable               as F
-import           Data.Int
-import           Data.List                   (intersperse)
-import           Data.Maybe                  (isNothing)
-import           Data.Monoid
-import           Data.Text                   (Text)
-import qualified Data.Text                   as T
-import           Data.Text.Encoding          (encodeUtf8)
+import qualified Data.ByteString         as B
+import qualified Data.Foldable           as F
+import           Data.List               (intersperse)
+import           Data.Maybe              (isNothing)
+import           Data.Semigroup          ((<>))
+import           Data.Text               (Text)
+import qualified Data.Text               as T
+import           Data.Text.Encoding      (encodeUtf8)
 import           Data.Time.Clock
 import           Data.Time.Clock.POSIX
-import           Data.Time.Format
-import           Data.Word
-import           Network.Socket              hiding (recv, recvFrom, send,
-                                              sendTo)
-import           System.IO                   (BufferMode (LineBuffering),
-                                              Handle, IOMode (WriteMode),
-                                              hClose, hSetBuffering)
+import           Network.Socket          hiding (recv, recvFrom, send, sendTo)
+import           System.Environment
+import           System.IO               (BufferMode (LineBuffering), Handle, IOMode (WriteMode), hClose, hSetBuffering)
+import           System.Random           (randomIO)
 
 epochTime :: UTCTime -> Int
 epochTime = round . utcTimeToPOSIXSeconds
 
-newtype MetricName = MetricName { fromMetricName :: Text }
+newtype SampleRate = SampleRate Double deriving (Show, Eq, Ord)
+newtype MetricName = MetricName { fromMetricName :: Text } deriving (Show, Eq)
+
+sampleAlways :: SampleRate
+sampleAlways = SampleRate 1.0
 
 cleanMetricText :: Text -> Text
 cleanMetricText = T.map $ \c -> case c of
@@ -115,7 +115,7 @@ data MetricType = Gauge      -- ^ Gauges measure the value of a particular thing
                 | Timer      -- ^ StatsD only supports histograms for timing, not generic values (like the size of uploaded files or the number of rows returned from a query). Timers are essentially a special case of histograms, so they are treated in the same manner by DogStatsD for backwards compatibility.
                 | Histogram  -- ^ Histograms track the statistical distribution of a set of values, like the duration of a number of database queries or the size of files uploaded by users. Each histogram will track the average, the minimum, the maximum, the median and the 95th percentile.
                 | Set        -- ^ Sets are used to count the number of unique elements in a group. If you want to track the number of unique visitor to your site, sets are a great way to do that.
-
+                deriving (Show, Eq)
 -- | Converts a supported numeric type to the format understood by DogStatsD. Currently limited by BufferBuilder encoding options.
 class ToMetricValue a where
   encodeValue :: a -> Utf8Builder ()
@@ -128,7 +128,7 @@ instance ToMetricValue Double where
 
 -- | Smart 'Metric' constructor. Use the lens functions to set the optional fields.
 metric :: (ToMetricValue a) => MetricName -> MetricType -> a -> Metric
-metric n t v = Metric n 1 t (encodeValue v) []
+metric n t v = Metric n sampleAlways t (encodeValue v) []
 
 -- | 'Metric'
 --
@@ -145,7 +145,7 @@ metric n t v = Metric n 1 t (encodeValue v) []
 -- * 'tags' @::@ @[@'Tag'@]@
 data Metric = Metric
   { metricName       :: !MetricName
-  , metricSampleRate :: {-# UNPACK #-} !Double
+  , metricSampleRate :: {-# UNPACK #-} !SampleRate
   , metricType'      :: !MetricType
   , mValue           :: !(Utf8Builder ())
   , metricTags       :: ![Tag]
@@ -161,7 +161,7 @@ value = sets $ \f m -> m { mValue = encodeValue $ f $ mValue m }
 {-# INLINE value #-}
 
 renderMetric :: Metric -> Utf8Builder ()
-renderMetric (Metric n sr t v ts) = do
+renderMetric (Metric n (SampleRate sr) t v ts) = do
   appendText $ cleanMetricText $ fromMetricName n
   appendChar7 ':'
   v
@@ -349,8 +349,12 @@ makeFields ''DogStatsSettings
 defaultSettings :: DogStatsSettings
 defaultSettings = DogStatsSettings "127.0.0.1" 8125
 
-createStatsClient :: MonadIO m => DogStatsSettings -> m StatsClient
-createStatsClient s = liftIO $ do
+createStatsClient :: MonadIO m
+                  => DogStatsSettings
+                  -> MetricName
+                  -> [Tag]
+                  -> m StatsClient
+createStatsClient s n ts = liftIO $ do
   addrInfos <- getAddrInfo (Just $ defaultHints { addrFlags = [AI_PASSIVE] })
                                     (Just $ s ^. host)
                                     (Just $ show $ s ^. port)
@@ -371,18 +375,17 @@ createStatsClient s = liftIO $ do
                                                 , reaperEmpty = Nothing
                                                 }
       r <- mkReaper reaperSettings
-      return $ StatsClient h r
+      return $ StatsClient h r n ts
 
 closeStatsClient :: MonadIO m => StatsClient -> m ()
 closeStatsClient c = liftIO $ finalizeStatsClient c >> hClose (statsClientHandle c)
-
-withDogStatsD :: MonadBaseControl IO m => DogStatsSettings -> (StatsClient -> m a) -> m a
-withDogStatsD s = liftBaseOp (bracket (createStatsClient s) closeStatsClient)
 
 -- | Note that Dummy is not the only constructor, just the only publicly available one.
 data StatsClient = StatsClient
                    { statsClientHandle :: !Handle
                    , statsClientReaper :: Reaper (Maybe (Utf8Builder ())) (Utf8Builder ())
+                   , statsAspect       :: MetricName
+                   , statsTags         :: [Tag]
                    }
                  | Dummy -- ^ Just drops all stats.
 
@@ -395,18 +398,83 @@ data StatsClient = StatsClient
 -- >   send client $ event "Wombat attack" "A host of mighty wombats has breached the gates"
 -- >   send client $ metric "wombat.force_count" Gauge (9001 :: Int)
 -- >   send client $ serviceCheck "Wombat Radar" ServiceOk
-send :: (MonadBase IO m, ToStatsD v) => StatsClient -> v -> m ()
-send (StatsClient _ r) v = liftBase $ reaperAdd r (toStatsD v >> appendChar7 '\n')
-send Dummy _ = return ()
+-- send :: (MonadBase IO m, ToStatsD v) => StatsClient -> v -> m ()
+-- send Dummy _             = return ()
+-- send (StatsClient _ r) v = liftBase $ reaperAdd r (toStatsD v >> appendChar7 '\n')
+-- {-# INLINEABLE send #-}
+
+tagged :: (HasTags v [Tag]) => (a -> v) -> (a -> [Tag]) -> a -> v
+tagged getVal getTag a = getVal a & tags %~ (getTag a ++)
+{-# INLINE tagged #-}
+
+sampled' :: (HasSampleRate v SampleRate) => (a -> v) -> (a -> SampleRate) -> a -> v
+sampled' getVal getRate a = getVal a & sampleRate .~ getRate a
+{-# INLINE sampled' #-}
+
+sampled :: (HasSampleRate v SampleRate) => (a -> v) -> SampleRate -> a -> v
+sampled f r a = f a & sampleRate .~ r
+{-# INLINE sampled #-}
+
+incCounter :: MetricName -> Metric
+incCounter n = metric n Counter (1 :: Int)
+{-# INLINE incCounter #-}
+
+addCounter :: MetricName -> (a -> Int) -> a -> Metric
+addCounter n f a = metric n Counter (f a)
+{-# INLINE addCounter #-}
+
+gauge :: ToMetricValue v => MetricName -> (a -> v) -> a -> Metric
+gauge n f a = metric n Gauge (f a)
+{-# INLINE gauge #-}
+
+timer :: ToMetricValue v => MetricName -> (a -> v) -> a -> Metric
+timer n f a = metric n Timer (f a)
+{-# INLINE timer #-}
+
+histogram :: ToMetricValue v => MetricName -> (a -> v) -> a -> Metric
+histogram n f a = metric n Histogram (f a)
+{-# INLINE histogram #-}
+
+send :: (MonadIO m, ToStatsD v, HasSampleRate v SampleRate, HasName v MetricName, HasTags v [Tag])
+     => StatsClient
+     -> v
+     -> m ()
+send Dummy _                  = return ()
+send (StatsClient _ r n ts) v = liftIO $
+  reaperAdd r ((toStatsD . addAspect n . addTags ts) v >> appendChar7 '\n')
 {-# INLINEABLE send #-}
 
-sendIO :: (MonadIO m, ToStatsD v) => StatsClient -> v -> m ()
-sendIO (StatsClient _ r) v = liftIO $ reaperAdd r (toStatsD v >> appendChar7 '\n')
-sendIO Dummy _ = return ()
-{-# INLINEABLE sendIO #-}
+sendSampled :: (MonadIO m, ToStatsD v, HasSampleRate v SampleRate, HasName v MetricName, HasTags v [Tag])
+            => StatsClient
+            -> v
+            -> m ()
+sendSampled Dummy _ = return ()
+sendSampled c v     = liftIO $ do
+  z <- SampleRate <$> randomIO
+  when (z <= v ^. sampleRate) $ send c v
+{-# INLINEABLE sendSampled #-}
 
+type EnvVarName = String
+type TagKey = T.Text
 
+envTag :: EnvVarName -> TagKey -> IO (Maybe Tag)
+envTag var key = do
+  mbVal <- lookupEnv var
+  return $ (tag key . T.pack) <$> mbVal
 
 finalizeStatsClient :: StatsClient -> IO ()
-finalizeStatsClient (StatsClient h r) = reaperStop r >>= F.mapM_ (B.hPut h . runUtf8Builder)
-finalizeStatsClient Dummy = return ()
+finalizeStatsClient (StatsClient h r _ _) = reaperStop r >>= F.mapM_ (B.hPut h . runUtf8Builder)
+finalizeStatsClient Dummy                 = return ()
+
+addAspect :: (HasName v MetricName) => MetricName -> v -> v
+addAspect (MetricName a) v =
+  if T.null a
+    then v
+    else v & name %~ (\(MetricName n) -> MetricName (a <> "." <> n))
+{-# INLINE addAspect #-}
+
+addTags :: (HasTags v [Tag]) => [Tag] -> v -> v
+addTags [] v = v
+addTags ts v = v & tags %~ (ts ++)
+{-# INLINE addTags #-}
+
