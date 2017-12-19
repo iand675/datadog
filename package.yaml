@@ -1,0 +1,86 @@
+name: datadog
+version: '0.3.0.0'
+author: Ian Duncan
+maintainer: ian@iankduncan.com
+license: MIT
+license-file: LICENSE
+synopsis: 'Datadog client for Haskell. Supports both the HTTP API and StatsD.'
+homepage: 'https://github.com/iand675/datadog'
+category: Network
+build-type: Simple
+
+default-extensions:
+  - ConstraintKinds
+  - DataKinds
+  - DeriveDataTypeable
+  - DeriveGeneric
+  - EmptyDataDecls
+  - FlexibleContexts
+  - FlexibleInstances
+  - GADTs
+  - GeneralizedNewtypeDeriving
+  - LambdaCase
+  - MultiParamTypeClasses
+  - NamedFieldPuns
+  # - NoImplicitPrelude
+  - NoMonomorphismRestriction
+  - OverloadedStrings
+  - PackageImports
+  - PolyKinds
+  - QuasiQuotes
+  - RankNTypes
+  - RecordWildCards
+  - ScopedTypeVariables
+  - StandaloneDeriving
+  - TemplateHaskell
+  - TupleSections
+  - TypeFamilies
+  - TypeOperators
+  - ViewPatterns
+
+ghc-options:
+  - -Wall
+  # - -Werror
+  - -fwarn-tabs
+  - -O2
+
+dependencies:
+  - aeson
+  - auto-update
+  - base
+  - buffer-builder
+  - bytestring
+  - dlist
+  - http-client
+  - http-client-tls
+  - http-types
+  - lens
+  - lifted-base
+  - monad-control
+  - network
+  - old-locale
+  - text
+  - time
+  - transformers-base
+  - unordered-containers
+  - vector
+
+library:
+  source-dirs: src
+
+tests:
+  datadog-api-test:
+    main: Spec.hs
+    source-dirs:
+      - test
+    dependencies:
+      - base
+      - Cabal
+      - exceptions
+      - hspec
+      - network
+      - lens
+      - random
+      - text
+      - time
+      - datadog
