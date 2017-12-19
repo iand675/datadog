@@ -16,16 +16,17 @@ import Network.Datadog.Check
   )
 
 spec :: Spec
-spec = it "Records a status check" $ do
-  let environment :: IO Environment
-      environment = createEnvironment =<< loadKeysFromEnv
-      check = CheckResult
-        { checkResultCheck = "Datadog Test Check"
-        , checkResultHostName = "development"
-        , checkResultStatus = CheckOk
-        , checkResultTimestamp = Nothing
-        , checkResultMessage = Nothing
-        , checkResultTags = []
-        }
-  env <- environment
-  recordCheck env check
+spec = describe "Check spec" $ do
+  it "Records a status check" $ do
+    let environment :: IO Environment
+        environment = createEnvironment =<< loadKeysFromEnv
+        check = CheckResult
+          { checkResultCheck = "Datadog Test Check"
+          , checkResultHostName = "development"
+          , checkResultStatus = CheckOk
+          , checkResultTimestamp = Nothing
+          , checkResultMessage = Nothing
+          , checkResultTags = []
+          }
+    env <- environment
+    recordCheck env check

@@ -11,9 +11,9 @@ import qualified Test.Network.Datadog.StatsD as StatsD (spec)
 
 spec :: Spec
 spec = describe "Datadog spec" $ do
-  describe "StatsD spec" StatsD.spec
-  describe "Check spec" Check.spec
-  describe "Downtime spec" Downtime.spec
-  describe "Event spec" Event.spec
-  describe "Host spec" Host.spec
-  describe "Monitor spec" Monitor.spec
+  StatsD.spec
+  Check.spec
+  Downtime.spec
+  Event.spec
+  Host.spec
+  Monitor.spec
