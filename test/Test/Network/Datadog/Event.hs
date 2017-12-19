@@ -39,7 +39,7 @@ testEventCycle = do
   let computation = do
         threadDelay 500000
         event1 <- createEvent env testDetails
-        threadDelay 10000000
+        threadDelay 20000000
         event2 <- loadEvent env (event1 ^. id')
         threadDelay 500000
         events <- loadEvents env (addUTCTime (-60) time, addUTCTime 60 time) Nothing []

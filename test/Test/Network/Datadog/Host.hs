@@ -5,12 +5,13 @@ module Test.Network.Datadog.Host (tests) where
 
 import Control.Concurrent (threadDelay)
 import Control.Exception
-
-import Distribution.TestSuite
-
+import Data.Semigroup ((<>))
+import Data.Text (Text, pack)
 import Data.Time.Clock
+import Distribution.TestSuite
+import System.Random (randomIO)
 
-import Network.Datadog (Environment, loadKeysFromEnv, createEnvironment)
+import Network.Datadog (Environment, createEnvironment, loadKeysFromEnv)
 import Network.Datadog.Host
 
 
@@ -28,31 +29,32 @@ tests = return
 environment :: IO Environment
 environment = createEnvironment =<< loadKeysFromEnv
 
-
-performMute :: Maybe UTCTime -> Bool -> IO ()
-performMute time override = do
+-- FIXME host should be randomized
+performMute :: Text -> Maybe UTCTime -> Bool -> IO ()
+performMute host time override = do
   env <- environment
   threadDelay 1000000
-  muteHost env "haskell-datadog-test-host" time override
+  muteHost env host time override
 
 
-performUnmute :: IO ()
-performUnmute = do
+performUnmute :: Text -> IO ()
+performUnmute host = do
   env <- environment
   threadDelay 1000000
-  unmuteHost env "haskell-datadog-test-host"
+  unmuteHost env host
 
 testHostMutes :: IO Progress
 testHostMutes = do
   time <- getCurrentTime
   let computation = do
+        host <- ("haskell-datadog-test-host-" <>) . pack . show <$> (randomIO :: IO Word)
         -- Ensure overriding works
-        performMute Nothing True
-        performMute (Just (addUTCTime 30 time)) True
+        performMute host Nothing True
+        performMute host (Just (addUTCTime 30 time)) True
         -- Unmute the host before we test no override option
-        performUnmute
-        performMute Nothing False
+        performUnmute host
+        performMute host Nothing False
         -- Unmute for "cleanup"
-        performUnmute
+        performUnmute host
         return $ Finished Pass
   catch computation (\e -> return $ Finished $ Fail $ show (e :: SomeException))
