@@ -1,39 +1,38 @@
-{-# LANGUAGE OverloadedStrings #-}
+module Test.Network.Datadog.StatsD (spec) where
 
-module Test.Network.Datadog.StatsD (tests) where
-import           Control.Exception
-import           Data.Maybe
-import           Distribution.TestSuite
-import           Network.StatsD.Datadog hiding (name, tags)
-import           Network.Socket hiding (send, sendTo, recv, recvFrom)
-import           Network.Socket.ByteString hiding (send)
-import           System.Timeout
+import Control.Monad.Catch (bracket)
+import Network.Socket
+  ( AddrInfoFlag (AI_PASSIVE)
+  , Socket
+  , SocketType (Datagram)
+  , addrAddress
+  , addrFamily
+  , addrFlags
+  , bind
+  , close
+  , defaultHints
+  , defaultProtocol
+  , getAddrInfo
+  , recvFrom
+  , socket
+  )
+import System.Timeout (timeout)
+import Test.Hspec (Spec, expectationFailure, it)
 
-tests :: IO [Test]
-tests = return
-  [ Test TestInstance { run = testSend
-                      , name = "Test sending DogStatsD data to a local server"
-                      , tags = ["StatsD"]
-                      , options = []
-                      , setOption = \_ _ -> Left ""
-                      }
-  ]
+import Network.StatsD.Datadog (defaultSettings, event, send, withDogStatsD)
 
-makeServer :: IO Socket
-makeServer = do
-  (serverAddr:_) <- getAddrInfo (Just (defaultHints { addrFlags = [AI_PASSIVE] }))
-                                Nothing
-                                (Just "8125")
-  sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
-  bindSocket sock (addrAddress serverAddr)
-  return sock
-
-testSend :: IO Progress
-testSend = bracket makeServer sClose $ \conn -> do
-  withDogStatsD defaultSettings $ \stats -> do
-    send stats $ event "foo" "bar"
-  val <- timeout 10000000 $ recvFrom conn 2048
-  return $ Finished $ if isJust val
-                      then Pass
-                      else Fail "Did not receive DogStatsD event"
-
+spec :: Spec
+spec = it "Sends DogStatsD data to a local server" $ do
+  let makeServer :: IO Socket
+      makeServer = do
+        (serverAddr:_) <- getAddrInfo (Just defaultHints { addrFlags = [AI_PASSIVE] }) Nothing (Just "8125")
+        sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
+        bind sock (addrAddress serverAddr)
+        return sock
+  bracket makeServer close $ \conn -> do
+    withDogStatsD defaultSettings $ \stats -> do
+      send stats $ event "foo" "bar"
+    val <- timeout 10000000 $ recvFrom conn 2048
+    case val of
+      Just _  -> pure ()
+      Nothing -> expectationFailure "Did not receive DogStatsD event"

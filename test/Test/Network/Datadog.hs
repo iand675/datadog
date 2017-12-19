@@ -1,23 +1,19 @@
-module Test.Network.Datadog (tests) where
+module Test.Network.Datadog (spec) where
 
+import Test.Hspec (Spec, describe)
 
-import Distribution.TestSuite
+import qualified Test.Network.Datadog.Check as Check (spec)
+import qualified Test.Network.Datadog.Downtime as Downtime (spec)
+import qualified Test.Network.Datadog.Event as Event (spec)
+import qualified Test.Network.Datadog.Host as Host (spec)
+import qualified Test.Network.Datadog.Monitor as Monitor (spec)
+import qualified Test.Network.Datadog.StatsD as StatsD (spec)
 
-import qualified Test.Network.Datadog.StatsD as StatsD (tests)
-import qualified Test.Network.Datadog.Check as Check (tests)
-import qualified Test.Network.Datadog.Downtime as Downtime (tests)
-import qualified Test.Network.Datadog.Event as Event (tests)
-import qualified Test.Network.Datadog.Monitor as Monitor (tests)
-import qualified Test.Network.Datadog.Host as Host (tests)
-
-
-tests :: IO [Test]
-tests = map (\(s,t) -> Group s False t)
-        <$> mapM (\(s,tm) -> fmap (\t -> (s,t)) tm)
-        [("StatsD", StatsD.tests)
-        ,("Check", Check.tests)
-        ,("Downtime", Downtime.tests)
-        ,("Event", Event.tests)
-        ,("Host", Host.tests)
-        ,("Monitor", Monitor.tests)
-        ]
+spec :: Spec
+spec = describe "Datadog spec" $ do
+  describe "StatsD spec" StatsD.spec
+  describe "Check spec" Check.spec
+  describe "Downtime spec" Downtime.spec
+  describe "Event spec" Event.spec
+  describe "Host spec" Host.spec
+  describe "Monitor spec" Monitor.spec
