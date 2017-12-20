@@ -47,7 +47,7 @@ ghc-options:
 dependencies:
   - aeson
   - auto-update
-  - base
+  - base >= 4.7 && < 5
   - buffer-builder
   - bytestring
   - dlist
