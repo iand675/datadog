@@ -1,10 +1,10 @@
 {-# OPTIONS_HADDOCK prune #-}
 {-# LANGUAGE FunctionalDependencies #-}
-module Network.Datadog.Internal.Lens where
+module Network.Datadog.Lens where
 
 import Control.Lens.TH (makeClassyPrisms, makeFields)
 
-import Network.Datadog.Internal.Types
+import Network.Datadog.Types
 
 makeFields ''CheckResult
 makeFields ''DowntimeSpec

@@ -11,6 +11,7 @@ module Network.Datadog.Internal
 , baseRequest
 , defaultMonitorOptions
 , DatadogCredentials(..)
+, module Network.Datadog.Lens
 , module Network.Datadog.Types
 ) where
 
@@ -36,6 +37,7 @@ import Network.HTTP.Client hiding (host)
 import Network.HTTP.Types
 
 import Network.Datadog.Types
+import Network.Datadog.Lens
 import Prelude hiding (splitAt)
 
 prependMaybe :: (a -> b) -> Maybe a -> [b] -> [b]
