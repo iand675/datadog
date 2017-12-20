@@ -1,12 +1,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE TemplateHaskell            #-}
 module Network.Datadog.Types where
-import           Control.Lens.TH
 import           Data.ByteString.Char8 (ByteString)
 import           Data.DList (DList)
 import           Data.HashMap.Strict (HashMap)
@@ -280,21 +278,3 @@ data Monitor = Monitor { monitorId' :: MonitorId
                          -- ^ The specification from which this monitor can be
                          -- re-created.
                        } deriving (Eq)
-
-makeFields ''CheckResult
-makeFields ''DowntimeSpec
-makeFields ''Downtime
-makeFields ''EventSpec
-makeFields ''Event
-makeFields ''Metric
-makeFields ''MonitorOptions
-makeFields ''MonitorSpec
-makeFields ''Monitor
-makeClassyPrisms ''Tag
-makeClassyPrisms ''CheckStatus
-makeClassyPrisms ''EventPriority
-makeClassyPrisms ''AlertType
-makeClassyPrisms ''SourceType
-makeClassyPrisms ''MetricPoints
-makeClassyPrisms ''MonitorType
-
