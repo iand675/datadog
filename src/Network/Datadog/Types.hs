@@ -278,3 +278,27 @@ data Monitor = Monitor { monitorId' :: MonitorId
                          -- ^ The specification from which this monitor can be
                          -- re-created.
                        } deriving (Eq)
+
+
+data UserAccessRole = st
+-- Standard user
+                     | adm
+-- Admin user
+                     | ro
+-- Read only user
+deriving (Eq)
+    
+instance Show UserAccessRole where
+  show st = "standard user"
+  show adm = "admin user"
+  show ro = "read-only user"
+
+-- | Advanced configuration parameters for a user.
+data UserOptions = UserOptions { userAcessRole :: UserAccessRole }
+
+-- | Datadog's internal reference to a specific user.
+type UserHandle = String
+
+data User = User { userHandle :: UserHandle
+                 , userName   :: String
+                 }
