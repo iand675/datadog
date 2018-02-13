@@ -279,19 +279,19 @@ data Monitor = Monitor { monitorId' :: MonitorId
                          -- re-created.
                        } deriving (Eq)
 
-
-data UserAccessRole = st
+-- Each user can have a role
+data UserAccessRole = St
 -- Standard user
-                     | adm
+                     | Adm
 -- Admin user
-                     | ro
+                     | Ro
 -- Read only user
-deriving (Eq)
+                     deriving (Eq)
     
 instance Show UserAccessRole where
-  show st = "standard user"
-  show adm = "admin user"
-  show ro = "read-only user"
+  show St = "standard user"
+  show Adm = "admin user"
+  show Ro = "read-only user"
 
 -- | Advanced configuration parameters for a user.
 data UserOptions = UserOptions { userAcessRole :: UserAccessRole }
@@ -301,4 +301,4 @@ type UserHandle = String
 
 data User = User { userHandle :: UserHandle
                  , userName   :: String
-                 }
+                 } deriving (Eq)
