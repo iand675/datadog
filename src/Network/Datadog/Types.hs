@@ -289,9 +289,9 @@ data UserAccessRole = St
                      deriving (Eq)
     
 instance Show UserAccessRole where
-  show St = "standard user"
-  show Adm = "admin user"
-  show Ro = "read-only user"
+  show St = "st"
+  show Adm = "adm"
+  show Ro = "ro"
 
 -- | Datadog's internal reference to a specific user.
 type UserHandle = String
@@ -303,14 +303,18 @@ data NewUser = NewUser
   , newUserAccessRole :: Maybe UserAccessRole
   } deriving (Eq)
   
--- | A Datadog user. 
-data User = DatadogUser 
+data UserSpec = UserSpec 
   { userVerified :: Bool
   , userName :: Maybe Text
-  , userAccessRole :: UserAccessRole
   , userDisabled :: Bool
   , userRole :: Maybe Text
   , userIsAdmin :: Bool
-  , userHandle :: Text
+  } deriving (Eq, Show)
+
+-- | A Datadog user. 
+data User = DatadogUser 
+  { userHandle :: Text
   , userEmail :: Text
+  , userAccessRole :: UserAccessRole
+  , userDetails :: UserSpec
   } deriving (Show, Eq)
