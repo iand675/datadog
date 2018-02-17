@@ -293,12 +293,24 @@ instance Show UserAccessRole where
   show Adm = "admin user"
   show Ro = "read-only user"
 
--- | Advanced configuration parameters for a user.
-data UserOptions = UserOptions { userAcessRole :: UserAccessRole }
-
 -- | Datadog's internal reference to a specific user.
 type UserHandle = String
 
-data User = User { userHandle :: UserHandle
-                 , userName   :: String
-                 } deriving (Eq)
+-- | A brand new user
+data NewUser = NewUser 
+  { newUserHandle :: UserHandle
+  , newUserName   :: Maybe Text
+  , newUserAccessRole :: Maybe UserAccessRole
+  } deriving (Eq)
+  
+-- | A Datadog user. 
+data User = DatadogUser 
+  { userVerified :: Bool
+  , userName :: Maybe Text
+  , userAccessRole :: UserAccessRole
+  , userDisabled :: Bool
+  , userRole :: Maybe Text
+  , userIsAdmin :: Bool
+  , userHandle :: Text
+  , userEmail :: Text
+  } deriving (Show, Eq)
