@@ -12,7 +12,7 @@ module Network.StatsD.Datadog (
   defaultSettings,
   createStatsClient,
   closeStatsClient,
-  send, sendSampled,
+  send, sendSampled, sendEvt,
   -- * Data supported by DogStatsD
   metric,
   Metric,
@@ -435,7 +435,7 @@ histogram :: ToMetricValue v => MetricName -> (a -> v) -> a -> Metric
 histogram n f a = metric n Histogram (f a)
 {-# INLINE histogram #-}
 
-send :: (MonadIO m, ToStatsD v, HasSampleRate v SampleRate, HasName v MetricName, HasTags v [Tag])
+send :: (MonadIO m, ToStatsD v, HasName v MetricName, HasTags v [Tag])
      => StatsClient
      -> v
      -> m ()
@@ -443,6 +443,11 @@ send Dummy _                  = return ()
 send (StatsClient _ r n ts) v = liftIO $
   reaperAdd r ((toStatsD . addAspect n . addTags ts) v >> appendChar7 '\n')
 {-# INLINEABLE send #-}
+
+sendEvt :: (MonadIO m) => StatsClient -> Event -> m ()
+sendEvt Dummy _ = return ()
+sendEvt (StatsClient _ r (MetricName n) ts) e = liftIO $
+  reaperAdd r ((toStatsD . addTags (tag "aspect" n : ts)) e >> appendChar7 '\n')
 
 sendSampled :: (MonadIO m, ToStatsD v, HasSampleRate v SampleRate, HasName v MetricName, HasTags v [Tag])
             => StatsClient
