@@ -2,5 +2,7 @@ flags: {}
 extra-package-dbs: []
 packages:
 - '.'
+- location: https://github.com/tvision-insights/buffer-builder/archive/13de7ada0cb6970bcbe891269709b3f2666c2299.zip
+  extra-dep: true
+resolver: lts-11.0
 extra-deps: []
-resolver: lts-9.20

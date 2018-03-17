@@ -209,7 +209,7 @@ data WrappedEvent = WrappedEvent { wrappedEvent :: Event }
 data WrappedEvents = WrappedEvents { wrappedEvents :: [Event] }
 
 newtype Series = Series { fromSeries :: DList Metric }
-                 deriving (Monoid)
+                 deriving (Semigroup, Monoid)
 
 data MetricPoints = Gauge   [(POSIXTime, Float)]
                   | Counter [(POSIXTime, Int64)]
