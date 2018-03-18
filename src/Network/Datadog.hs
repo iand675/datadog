@@ -24,7 +24,7 @@ module Network.Datadog
 import qualified Data.Text as T
 import           Data.Text.Encoding (encodeUtf8)
 
-import Network.HTTP.Client (newManager, withManager)
+import Network.HTTP.Client (newManager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 
 import System.Environment (getEnv)
@@ -55,7 +55,7 @@ createEnvironment keys = fmap (Environment keys "https://app.datadoghq.com/api/v
   where managerIO = newManager tlsManagerSettings
 
 withDatadog :: DatadogCredentials k => k -> (DatadogClient k -> IO a) -> IO a
-withDatadog k f = withManager tlsManagerSettings $ \man -> f $ DatadogClient man k
+withDatadog k f = newManager tlsManagerSettings >>= \man -> f $ DatadogClient man k
 
 writeCredentials :: T.Text -> Write
 writeCredentials = Write . encodeUtf8
