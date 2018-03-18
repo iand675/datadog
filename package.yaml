@@ -1,7 +1,7 @@
 name: datadog
-version: '0.2.1.0'
+version: '0.2.2.0'
 author: Ian Duncan
-maintainer: ian@iankduncan.com
+maintainer: Ian Duncan <ian@iankduncan.com>, Kostiantyn Rybnikov <k-bx@k-bx.com>
 license: MIT
 license-file: LICENSE
 synopsis: 'Datadog client for Haskell. Supports both the HTTP API and StatsD.'
