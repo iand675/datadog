@@ -46,10 +46,12 @@ ghc-options:
 
 dependencies:
   - aeson
+  - atomic-primops
   - auto-update
   - base >= 4.7 && < 5
   - buffer-builder
   - bytestring
+  - clock
   - dlist
   - http-client
   - http-client-tls
@@ -57,6 +59,7 @@ dependencies:
   - lens
   - lifted-base
   - monad-control
+  - mtl
   - network
   - old-locale
   - text
