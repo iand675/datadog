@@ -8,20 +8,47 @@ import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Aeson
-import qualified Data.ByteString.Lazy as L
 import Data.Atomics.Counter
 import qualified Data.HashMap.Strict as H
 import Data.IORef.Lifted
+import Data.String
 import Data.Text (Text, pack)
 import Data.Word
 import GHC.Stack
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
+import Network.HTTP.Types.Header
 import System.Clock
 
+newtype AppName = AppName Text
+  deriving (Show, Eq, Ord, IsString)
+
+instance ToJSON AppName where
+  toJSON (AppName t) = toJSON t
+
+-- $ App Types
+newtype AppType = AppType Text
+  deriving (Show, Eq, Ord)
+
+instance ToJSON AppType where
+  toJSON (AppType t) = toJSON t
+
+webApp :: AppType
+webApp = AppType "web"
+dbApp :: AppType
+dbApp = AppType "db"
+cacheApp :: AppType
+cacheApp = AppType "cache"
+workerApp :: AppType
+workerApp = AppType "worker"
+customApp :: AppType
+customApp = AppType "custom"
+rpcApp :: AppType
+rpcApp = AppType "rpc"
+
 data Service = Service
-  { serviceApp :: !Text
-  , serviceAppType :: !Text
+  { serviceApp :: !AppName
+  , serviceAppType :: !AppType
   } deriving (Show)
 
 instance ToJSON Service where
@@ -55,8 +82,8 @@ data Span = Span
   , spanId :: !SpanId
   , name :: !Text
   , resource :: !Text
-  , service :: !Text
-  , spanType :: !Text
+  , service :: !AppName
+  , spanType :: !SpanType
   , start :: !Nanoseconds
   , duration :: !Nanoseconds
   , parentId :: !(Maybe SpanId)
@@ -101,7 +128,12 @@ data TraceState = TraceState
   , currentSpan :: Maybe (IORef LifecycleSpan)
   }
 
-newTraceState :: MonadBase IO m => TraceId -> m TraceState
+newTraceState
+  :: MonadBase IO m
+  => -- Text -- ^ Service type ()
+  -- -> Text -- ^ Service name (name of the currently running app)
+     TraceId
+  -> m TraceState
 newTraceState tid = liftBase $ do
   sid <- newCounter 0
   ss <- newIORef []
@@ -109,13 +141,13 @@ newTraceState tid = liftBase $ do
 
 data Context = Context
   { contextBaggage :: !(H.HashMap Text Text)
-  , contextType :: !Text
-  , contextService :: !Text
+  , contextType :: !SpanType
+  , contextService :: !AppName
   , contextResource :: !Text
   , contextName :: !Text
   }
 
-ctxt :: Text -> Text -> Text -> Text -> Context
+ctxt :: SpanType -> AppName -> Text -> Text -> Context
 ctxt = Context H.empty
 
 class Monad m => MonadTrace m where
@@ -205,8 +237,8 @@ spanning c m = bracket
         modifySpan $ \s -> s
           { spanError = True
           , meta = meta s `H.union` H.fromList
-            [ ("error.exception", pack $ show (err :: SomeException))
-            , ("error.trace", pack $ prettyCallStack cs)
+            [ ("error.msg", pack $ show (err :: SomeException))
+            , ("error.stack", pack $ prettyCallStack cs)
             ]
           }
         throw err
@@ -226,7 +258,7 @@ runTrace tid m = do
   return (r, Trace spans)
 
 
-registerServices :: MonadBase IO m => H.HashMap Text Service -> m L.ByteString
+registerServices :: MonadBase IO m => H.HashMap Text Service -> m ()
 registerServices ss = liftBase $ do
   m <- getGlobalManager
   req <- parseRequest "http://localhost:8126/v0.3/services"
@@ -234,10 +266,10 @@ registerServices ss = liftBase $ do
         { method = "POST"
         , requestBody = RequestBodyLBS $ encode ss
         }
-  resp <- httpLbs req' m
+  resp <- httpNoBody req' m
   return $ responseBody resp
 
-sendTrace :: (MonadBase IO m) => Trace -> m L.ByteString
+sendTrace :: (MonadBase IO m) => Trace -> m ()
 sendTrace t = liftBase $ do
   m <- getGlobalManager
   req <- parseRequest "http://localhost:8126/v0.3/traces"
@@ -245,17 +277,109 @@ sendTrace t = liftBase $ do
         { method = "POST"
         , requestBody = RequestBodyLBS $ encode $ Traces [t]
         }
-  resp <- httpLbs req' m
+  resp <- httpNoBody req' m
   return $ responseBody resp
 
 requestDemo :: (MonadBaseControl IO m, MonadTrace m) => m [()]
-requestDemo = spanning (ctxt "web" "service_name" "/home" "request") $ do
-{-
-  isAuthed <- spanning (ctxt "web" "auth" "/check_manager" "check manager") $ return True
+requestDemo = spanning (ctxt webSpan "service_name" "/home" "request") $ do
+  isAuthed <- spanning (ctxt webSpan "auth" "/check_manager" "check manager") $ return True
 
   comments <- if isAuthed
-    then spanning (ctxt "sql" "postgresql" "betterteam_dev" "get comments") $ return [()]
+    then spanning (ctxt sqlSpan "postgresql" "betterteam_dev" "get comments") $ return [()]
     else return []
+
+  return comments
+
+-- $ Span Types
+newtype SpanType = SpanType Text
+  deriving (Show, Eq, Ord)
+
+instance ToJSON SpanType where
+  toJSON (SpanType t) = toJSON t
+
+-- | Intended for HTTP clients, not web requests
+httpSpan :: SpanType
+httpSpan = SpanType "http"
+
+webSpan :: SpanType
+webSpan = SpanType "web"
+
+sqlSpan :: SpanType
+sqlSpan = SpanType "sql"
+
+mongoSpan :: SpanType
+mongoSpan = SpanType "mongo"
+
+cassandraSpan :: SpanType
+cassandraSpan = SpanType "cassandra"
+
+queueSpan :: SpanType
+queueSpan = SpanType "queue"
+
+{-
+-- $ Services
+
+-- service: redis
+-- component_name: redis-command
+
+-- service: kafka
+-- component: librdkafka
+-- resource: Consume Topic _
+--
+
+-- $ Magic keys
+-- span.type
+-- service.name
+-- resource.name
+-- thread.name
+-- thread.id
+-- error.msg
+-- error.type
+-- error.stack
+
+-- $ HTTP Meta constants
+-- http.method
+-- http.status_code
+-- http.url
+
+-- $ Net Meta constants
+-- out.host
+-- out.port
+
+-- $ SQL constants
+-- sql.query
+-- db.name
+-- db.user
+
+-- $ System constants
+-- system.pid
+
+-- $ Tracer consts
+-- lang: haskell
+-- langversion: _
+-- interpreter: _
+-- lib_version: _
+
+-- $ Redis consts
+-- out.redis_db
+-- redis.raw_command
+-- redis.args_length
+-- redis.pipeline_length
+-- redis.pipeline_age
+-- redis.pipeline_immediate_command
 -}
 
-  return [()]
+-- $ HTTP headers one should set for distributed tracing.
+-- These are cross-language (eg: Python, Go and other implementations should honor these)
+
+hTraceId :: HeaderName
+hTraceId = "x-datadog-trace-id"
+
+hParentId :: HeaderName
+hParentId = "x-datadog-parent-id"
+
+hSamplingPriority :: HeaderName
+hSamplingPriority = "x-datadog-sampling-priority"
+
+samplingPriorityKey :: (IsString s) => s
+samplingPriorityKey = "_sampling_priority_v1"
