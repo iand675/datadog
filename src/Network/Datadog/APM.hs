@@ -1,24 +1,27 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE CPP #-}
 module Network.Datadog.APM where
 
-import Control.Exception.Lifted
 import Control.Monad.Base
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
 import Data.Aeson
-import Data.Atomics.Counter
+import qualified Data.ByteString.Char8 as B
 import qualified Data.HashMap.Strict as H
-import Data.IORef.Lifted
 import Data.String
 import Data.Text (Text, pack)
+import Data.Version
 import Data.Word
 import GHC.Stack
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
 import Network.HTTP.Types.Header
+import Paths_datadog
 import System.Clock
+import System.Random.MWC
+import UnliftIO
 
 newtype AppName = AppName Text
   deriving (Show, Eq, Ord, IsString)
@@ -71,11 +74,19 @@ newtype TraceId = TraceId Word64
 instance ToJSON TraceId where
    toJSON (TraceId i) = toJSON i
 
+instance Variate TraceId where
+  uniform g = TraceId <$> uniformR (1, maxBound) g
+  uniformR (TraceId l, TraceId h) g = TraceId <$> uniformR (max 1 l, h) g
+
 newtype SpanId = SpanId Word64
   deriving (Show)
 
 instance ToJSON SpanId where
    toJSON (SpanId i) = toJSON i
+
+instance Variate SpanId where
+  uniform g = SpanId <$> uniformR (1, maxBound) g
+  uniformR (SpanId l, SpanId h) g = SpanId <$> uniformR (max 1 l, h) g
 
 data Span = Span
   { traceId :: !TraceId
@@ -111,7 +122,7 @@ instance ToJSON Span where
     where
       mpid = maybe id (\pid -> (("parent_id" .= pid) :)) parentId
       merror = if spanError then (("error" .= (1 :: Int)) :) else id
-      mmeta = if H.null meta then (("meta" .= meta) :) else id
+      mmeta = if H.null meta then id else (("meta" .= meta) :)
 
 data LifecycleSpan = Pending Span | Finished Span
   deriving (Show)
@@ -120,24 +131,102 @@ unLifecycle :: LifecycleSpan -> Span
 unLifecycle (Pending s) = s
 unLifecycle (Finished s) = s
 
+data MTrace
+  = Dummy
+  | MTrace TraceState
+
 data TraceState = TraceState
   { traceStateTraceId :: TraceId
-  , spanIdGen :: AtomicCounter
+  , spanIdGen :: GenIO
   , finishedSpans :: IORef [Span]
-  , parentSpan :: Maybe (IORef LifecycleSpan)
-  , currentSpan :: Maybe (IORef LifecycleSpan)
+  , spanStack :: [IORef LifecycleSpan] -- Stack of parent spans
   }
 
-newTraceState
-  :: MonadBase IO m
-  => -- Text -- ^ Service type ()
-  -- -> Text -- ^ Service name (name of the currently running app)
-     TraceId
-  -> m TraceState
-newTraceState tid = liftBase $ do
-  sid <- newCounter 0
+createMutableTrace
+  :: MonadIO m
+  => TraceId
+  -> GenIO
+  -> m MTrace
+createMutableTrace tid gen = do
   ss <- newIORef []
-  return $ TraceState tid sid ss Nothing Nothing
+  return $ MTrace $ TraceState tid gen ss []
+
+completeMutableTrace :: (MonadIO m) => MTrace -> m Trace
+completeMutableTrace Dummy = return $ Trace []
+completeMutableTrace (MTrace st) = do
+  spans <- readIORef $ finishedSpans st
+  return $ Trace spans
+
+modifyMutableTrace :: (MonadIO m) => MTrace -> (Span -> Span) -> m ()
+modifyMutableTrace mt f = do
+  forM_ (stackHead mt) $ \sref -> atomicModifyIORef' sref $ \ms -> case ms of
+    Pending s -> (Pending $ f s, ())
+    Finished s -> (Finished s, ())
+
+tagTrace :: (MonadUnliftIO m) => MTrace -> H.HashMap Text Text -> m ()
+tagTrace st hm = case stackHead st of
+  Nothing -> return ()
+  Just sref -> modifyIORef' sref $ \ls -> case ls of
+    Pending s -> Pending $! s { meta = meta s `H.union` hm }
+    Finished _ -> ls
+
+markTraceAsError :: (MonadUnliftIO m) => MTrace -> m ()
+markTraceAsError mt = case stackHead mt of
+  Nothing -> return ()
+  Just sref -> modifyIORef' sref $ \ls -> case ls of
+    Pending s -> Pending $! s { spanError = True }
+    Finished _ -> ls
+
+stackHead :: MTrace -> Maybe (IORef LifecycleSpan)
+stackHead Dummy = Nothing
+stackHead (MTrace st) = case spanStack st of
+  [] -> Nothing
+  (s:_) -> Just s
+
+createMutableTraceSpan :: (MonadIO m) => MTrace -> Context -> m MTrace
+createMutableTraceSpan Dummy _ = return Dummy
+createMutableTraceSpan mtrace@(MTrace st) Context{..} = do
+  sid <- liftIO $ uniform $ spanIdGen st
+  startNanos <- nanos
+  mpid <- forM (stackHead mtrace) $ \sref -> (spanId . unLifecycle) <$> readIORef sref
+
+  let theSpan = Span
+        { traceId = traceStateTraceId st
+        , spanId = sid
+        , name = contextName
+        , resource = contextResource
+        , service = contextService
+        , spanType = contextType
+        , spanError = False
+        , start = startNanos
+        , duration = 0
+        , parentId = mpid
+        , meta = contextBaggage
+        }
+
+  spanRef <- newIORef (Pending theSpan)
+  return $ MTrace $ st
+    { spanStack = spanRef : spanStack st
+    }
+
+completeMutableTraceSpan :: MonadUnliftIO m => MTrace -> m MTrace
+completeMutableTraceSpan Dummy = return Dummy
+completeMutableTraceSpan mtrace@(MTrace st) = case stackHead mtrace of
+  Nothing -> return mtrace
+  Just sref -> do
+    endNanos <- nanos
+    finalizedSpan <- atomicModifyIORef' sref $ \ls ->
+      let s = unLifecycle ls
+          s' = s { duration = endNanos - start s }
+      in (Finished s', s')
+    atomicModifyIORef' (finishedSpans st) $ \ss -> (finalizedSpan : ss, ())
+
+    -- atomicModifyIORef' finishedSpans
+    return $ MTrace $ st
+      { spanStack = case spanStack st of
+          [] -> []
+          (_:ps) -> ps
+      }
 
 data Context = Context
   { contextBaggage :: !(H.HashMap Text Text)
@@ -150,49 +239,60 @@ data Context = Context
 ctxt :: SpanType -> AppName -> Text -> Text -> Context
 ctxt = Context H.empty
 
-class Monad m => MonadTrace m where
+class MonadUnliftIO m => MonadTrace m where
+  {-# MINIMAL currentTrace, descendIntoSpan #-}
+  currentTrace :: m MTrace
+
   getTraceId :: m TraceId
+  getTraceId = do
+    mt <- currentTrace
+    return $ case mt of
+      Dummy -> TraceId 0
+      (MTrace st) -> traceStateTraceId st
+
   getParentId :: m (Maybe SpanId)
-  newSpanId :: m SpanId
-  getSpan :: m (Maybe LifecycleSpan)
-
-  registerCompletedSpan :: Span -> m ()
-
-  modifySpan :: (Span -> Span) -> m ()
-
-  descendIntoSpan :: IORef LifecycleSpan -> m a -> m a
-
-instance (MonadBase IO m) => MonadTrace (ReaderT TraceState m) where
-  getTraceId = traceStateTraceId <$> ask
-
-  getParentId = do
-    mpsRef <- parentSpan <$> ask
+  getParentId =  do
+    mpsRef <- stackHead <$> currentTrace
     forM mpsRef $ \psRef -> do
       ps <- readIORef psRef
       return $ spanId $ unLifecycle ps
 
+  newSpanId :: m SpanId
   newSpanId = do
-    spanGen <- spanIdGen <$> ask
-    ident <- liftBase $ incrCounter 1 spanGen
-    return $! SpanId (fromIntegral ident)
+    mt <- currentTrace
+    case mt of
+      Dummy -> return $ SpanId 0
+      (MTrace st) -> liftIO $ uniform $ spanIdGen st
 
+  getSpan :: m (Maybe LifecycleSpan)
   getSpan = do
-    msRef <- currentSpan <$> ask
+    msRef <- stackHead <$> currentTrace
     forM msRef readIORef
 
+  registerCompletedSpan :: Span -> m ()
   registerCompletedSpan s = do
-    st <- ask
-    atomicModifyIORef' (finishedSpans st) (\ss -> s `seq` (s : ss, ()))
+    mt <- currentTrace
+    case mt of
+      Dummy -> return ()
+      (MTrace st) -> atomicModifyIORef' (finishedSpans st) (\ss -> s `seq` (s : ss, ()))
 
+  modifySpan :: (Span -> Span) -> m ()
   modifySpan f = do
-    msref <- currentSpan <$> ask
-    forM_ msref $ \sref -> atomicModifyIORef' sref $ \ms -> case ms of
-      Pending s -> (Pending $ f s, ())
-      Finished s -> (Finished s, ())
+    mt <- currentTrace
+    modifyMutableTrace mt f
 
-  descendIntoSpan r = local (\st -> st { parentSpan = currentSpan st, currentSpan = Just r })
+  descendIntoSpan :: IORef LifecycleSpan -> m a -> m a
 
-createSpan :: (MonadBase IO m, MonadTrace m) => Context -> m Span
+instance (MonadUnliftIO m) => MonadTrace (ReaderT MTrace m) where
+  currentTrace = ask
+  descendIntoSpan r = local $ \st -> case st of
+    Dummy -> st
+    (MTrace innerSt) -> MTrace $ innerSt
+      { spanStack = r : spanStack innerSt
+      }
+
+
+createSpan :: (MonadUnliftIO m, MonadTrace m) => Context -> m Span
 createSpan Context{..} = do
   tid <- getTraceId
   sid <- newSpanId
@@ -213,7 +313,7 @@ createSpan Context{..} = do
     , meta = contextBaggage
     }
 
-finalizeSpan :: (MonadBase IO m, MonadTrace m) => IORef LifecycleSpan -> m Span
+finalizeSpan :: (MonadUnliftIO m, MonadTrace m) => IORef LifecycleSpan -> m Span
 finalizeSpan sref = do
   endNanos <- nanos
   s <- unLifecycle <$> readIORef sref
@@ -222,10 +322,10 @@ finalizeSpan sref = do
   return s'
 
 
-nanos :: MonadBase IO m => m Nanoseconds
-nanos = toNanoSecs <$> liftBase (getTime Realtime)
+nanos :: MonadIO m => m Nanoseconds
+nanos = toNanoSecs <$> liftIO (getTime Realtime)
 
-spanning :: (MonadBaseControl IO m, MonadTrace m) => Context -> m a -> m a
+spanning :: (MonadUnliftIO m, MonadTrace m) => Context -> m a -> m a
 spanning c m = bracket
   (setUpSpan)
   (\sref -> finalizeSpan sref >>= registerCompletedSpan) $ \sref -> descendIntoSpan sref $ do
@@ -241,7 +341,7 @@ spanning c m = bracket
             , ("error.stack", pack $ prettyCallStack cs)
             ]
           }
-        throw err
+        throwIO err
       Right ok -> return ok
     where
       setUpSpan = do
@@ -250,16 +350,16 @@ spanning c m = bracket
         return sref
 
 
-runTrace :: (MonadBase IO m) => TraceId -> ReaderT TraceState m a -> m (a, Trace)
-runTrace tid m = do
-  st <- newTraceState tid
+runTrace :: (MonadUnliftIO m) => TraceId -> GenIO -> ReaderT MTrace m a -> m (a, Trace)
+runTrace tid gen m = do
+  st <- createMutableTrace tid gen
   r <- runReaderT m st
-  spans <- readIORef $ finishedSpans st
-  return (r, Trace spans)
+  spans <- completeMutableTrace st
+  return (r, spans)
 
 
-registerServices :: MonadBase IO m => H.HashMap Text Service -> m ()
-registerServices ss = liftBase $ do
+registerServices :: (MonadIO m) => H.HashMap Text Service -> m ()
+registerServices ss = liftIO $ do
   m <- getGlobalManager
   req <- parseRequest "http://localhost:8126/v0.3/services"
   let req' = req
@@ -269,6 +369,15 @@ registerServices ss = liftBase $ do
   resp <- httpNoBody req' m
   return $ responseBody resp
 
+baseHeaders :: [Header]
+baseHeaders =
+  [ ("Datadog-Meta-Lang", "Haskell")
+  -- , ("Datadog-Meta-Lang-Version", "ghc-__GLASGOW_HASKELL__")
+  -- , ("Datadog-Meta-Lang-Interpreter", "ghc-__GLASGOW_HASKELL__-arch_HOST_ARCH-GOOS")
+  , ("Datadog-Meta-Tracer-Version", B.pack $ showVersion version)
+  -- ("Content-Type", "application/json; charset=utf-8")
+  ]
+
 sendTrace :: (MonadBase IO m) => Trace -> m ()
 sendTrace t = liftBase $ do
   m <- getGlobalManager
@@ -276,11 +385,20 @@ sendTrace t = liftBase $ do
   let req' = req
         { method = "POST"
         , requestBody = RequestBodyLBS $ encode $ Traces [t]
+        , requestHeaders = baseHeaders
         }
   resp <- httpNoBody req' m
   return $ responseBody resp
 
-requestDemo :: (MonadBaseControl IO m, MonadTrace m) => m [()]
+-- $ Non-bracketable spans (needed for things like wai-middleware)
+
+
+
+
+
+--
+
+requestDemo :: (MonadUnliftIO m, MonadTrace m) => m [()]
 requestDemo = spanning (ctxt webSpan "service_name" "/home" "request") $ do
   isAuthed <- spanning (ctxt webSpan "auth" "/check_manager" "check manager") $ return True
 
@@ -353,12 +471,6 @@ queueSpan = SpanType "queue"
 
 -- $ System constants
 -- system.pid
-
--- $ Tracer consts
--- lang: haskell
--- langversion: _
--- interpreter: _
--- lib_version: _
 
 -- $ Redis consts
 -- out.redis_db

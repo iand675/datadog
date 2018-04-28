@@ -60,11 +60,13 @@ dependencies:
   - lifted-base
   - monad-control
   - mtl
+  - mwc-random
   - network
   - old-locale
   - text
   - time
   - transformers-base
+  - unliftio
   - unordered-containers
   - vector
 
