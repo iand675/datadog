@@ -17,12 +17,20 @@ library
   hs-source-dirs:      src
   exposed-modules:     Network.Wai.Middleware.Datadog
   build-depends:       base >= 4.7 && < 5
+                     , aeson
+                     , bytestring
                      , clock
                      , datadog
+                     , iproute
+                     , mwc-random
                      , text
                      , wai
                      , vault
+                     , http-types
                      , lens
+                     , network
+                     , unix
+                     , unordered-containers
 
   default-language:    Haskell2010
 
