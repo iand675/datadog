@@ -5,13 +5,13 @@
 {-# LANGUAGE CPP #-}
 module Network.Datadog.APM where
 
-import Control.Monad.Base
 import Control.Monad.Catch (MonadCatch, MonadThrow, MonadMask)
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.Writer
 import Control.Monad.State
 import Control.Monad.Trans.Resource
+import Control.Reaper
 import Data.Aeson
 import qualified Data.ByteString.Char8 as B
 import Data.Conduit.Lazy (MonadActive)
@@ -28,6 +28,44 @@ import Paths_datadog
 import System.Clock
 import System.Random.MWC
 import UnliftIO
+
+data APMClient = APMClient
+  { apmEndpoint :: IORef Request
+  , apmReaper :: Reaper [Trace] Trace
+  }
+
+localApmAgentUrl :: String
+localApmAgentUrl = "http://localhost:8126"
+
+mkApmClient :: (MonadIO m, MonadThrow m) => String -> m APMClient
+mkApmClient str = do
+  baseReq <- parseRequest str
+  ref <- newIORef baseReq
+  let settings = defaultReaperSettings
+        { reaperAction = \workload -> case splitAt 100 workload of
+            (traces, rest) -> do
+              m <- getGlobalManager
+              req <- readIORef ref
+              let req' = req
+                    { method = "POST"
+                    , path = "/v0.3/traces"
+                    , requestBody = RequestBodyLBS $ encode $ Traces traces
+                    , requestHeaders = baseHeaders ++ requestHeaders req
+                    }
+              _resp <- httpNoBody req' m
+              -- TODO check resp here
+              return (rest ++)
+        }
+  rpr <- liftIO $ mkReaper settings
+
+  return $ APMClient
+    { apmEndpoint = ref
+    , apmReaper = rpr
+    }
+
+
+sendTrace :: MonadIO m => APMClient -> Trace -> m ()
+sendTrace c = liftIO . reaperAdd (apmReaper c)
 
 newtype AppName = AppName Text
   deriving (Show, Eq, Ord, IsString)
@@ -410,22 +448,7 @@ baseHeaders =
   -- ("Content-Type", "application/json; charset=utf-8")
   ]
 
-sendTrace :: (MonadBase IO m) => Trace -> m ()
-sendTrace t = liftBase $ do
-  m <- getGlobalManager
-  req <- parseRequest "http://localhost:8126/v0.3/traces"
-  let req' = req
-        { method = "POST"
-        , requestBody = RequestBodyLBS $ encode $ Traces [t]
-        , requestHeaders = baseHeaders
-        }
-  resp <- httpNoBody req' m
-  return $ responseBody resp
-
 -- $ Non-bracketable spans (needed for things like wai-middleware)
-
-
-
 
 
 --
