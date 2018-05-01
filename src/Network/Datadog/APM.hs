@@ -321,7 +321,7 @@ deriving instance MonadWriter w m => MonadWriter w (NoTraceT m)
 deriving instance MonadState s m => MonadState s (NoTraceT m)
 
 instance MonadTrace (NoTraceT m) where
-  currentSpan = return Dummy
+  currentTrace = return Dummy
   descendIntoSpan _ = id
 
 createSpan :: (MonadUnliftIO m, MonadTrace m) => Context -> m Span
