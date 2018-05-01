@@ -116,8 +116,8 @@ rtsStatReporter client ts = do
     scg "rts.gc.current_bytes_slop" Gauge currentBytesSlop
 -}
 
-apmMiddleware :: Context -> Middleware
-apmMiddleware ctxt app req respond = do
+apmMiddleware :: APMClient -> Context -> Middleware
+apmMiddleware client ctxt app req respond = do
   threadId <- myThreadId
   tid <- TraceId <$> uniform traceGenerator
   mt <- createMutableTrace tid traceGenerator >>= \st -> createMutableTraceSpan st ctxt
@@ -157,13 +157,13 @@ apmMiddleware ctxt app req respond = do
           tagTrace mt (httpMeta `HM.union` netMeta `HM.union` otherMeta)
           mt' <- completeMutableTraceSpan mt
           t <- completeMutableTrace mt'
-          sendTrace t
+          sendTrace client t
     r <- respond resp
     case resp of
       ResponseRaw{} -> do
         mt' <- completeMutableTraceSpan mt
         t <- completeMutableTrace mt'
-        sendTrace t
+        sendTrace client t
       ResponseFile status respHeaders _ _ -> traceFinisher status respHeaders
       ResponseBuilder status respHeaders _ -> traceFinisher status respHeaders
       ResponseStream status respHeaders _ -> traceFinisher status respHeaders
