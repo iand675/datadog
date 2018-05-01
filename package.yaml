@@ -52,12 +52,16 @@ dependencies:
   - buffer-builder
   - bytestring
   - clock
+  - conduit
+  - conduit-extra
   - dlist
+  - exceptions
   - http-client
   - http-client-tls
   - http-types
   - lens
   - lifted-base
+  - resourcet
   - monad-control
   - mtl
   - mwc-random

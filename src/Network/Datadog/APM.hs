@@ -1,14 +1,20 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE CPP #-}
 module Network.Datadog.APM where
 
 import Control.Monad.Base
+import Control.Monad.Catch (MonadCatch, MonadThrow, MonadMask)
+import Control.Monad.Except
 import Control.Monad.Reader
-import Control.Monad.Trans.Control
+import Control.Monad.Writer
+import Control.Monad.State
+import Control.Monad.Trans.Resource
 import Data.Aeson
 import qualified Data.ByteString.Char8 as B
+import Data.Conduit.Lazy (MonadActive)
 import qualified Data.HashMap.Strict as H
 import Data.String
 import Data.Text (Text, pack)
@@ -291,6 +297,28 @@ instance (MonadUnliftIO m) => MonadTrace (ReaderT MTrace m) where
       { spanStack = r : spanStack innerSt
       }
 
+newtype NoTraceT m a = NoTraceT
+  { runNoTraceT :: m a
+  } deriving ( Monad
+             , Functor
+             , Applicative
+             , MonadIO
+             , MonadResource
+             , MonadActive
+             , MonadThrow
+             , MonadCatch
+             , MonadMask
+             )
+
+instance MonadUnliftIO m => MonadUnliftIO (NoTraceT m) where
+  askUnliftIO = NoTraceT $ do
+    (UnliftIO ui) <- askUnliftIO
+    return $ UnliftIO (ui . runNoTraceT)
+
+deriving instance MonadError e m => MonadError e (NoTraceT m)
+deriving instance MonadReader r m => MonadReader r (NoTraceT m)
+deriving instance MonadWriter w m => MonadWriter w (NoTraceT m)
+deriving instance MonadState s m => MonadState s (NoTraceT m)
 
 createSpan :: (MonadUnliftIO m, MonadTrace m) => Context -> m Span
 createSpan Context{..} = do
