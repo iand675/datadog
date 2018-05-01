@@ -320,7 +320,7 @@ deriving instance MonadReader r m => MonadReader r (NoTraceT m)
 deriving instance MonadWriter w m => MonadWriter w (NoTraceT m)
 deriving instance MonadState s m => MonadState s (NoTraceT m)
 
-instance MonadTrace (NoTraceT m) where
+instance (MonadUnliftIO m) => MonadTrace (NoTraceT m) where
   currentTrace = return Dummy
   descendIntoSpan _ = id
 
