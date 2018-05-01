@@ -51,7 +51,7 @@ loadKeysFromEnv = do
 -- | Create a new environment using authentication keys, defaulting to the
 -- Datadog documented default API URL.
 createEnvironment :: Keys -> IO Environment
-createEnvironment keys = fmap (Environment keys "https://app.datadoghq.com/api/v1/") managerIO
+createEnvironment keys = fmap (Environment keys "https://api.datadoghq.com/api/v1/") managerIO
   where managerIO = newManager tlsManagerSettings
 
 withDatadog :: DatadogCredentials k => k -> (DatadogClient k -> IO a) -> IO a
