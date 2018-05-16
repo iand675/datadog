@@ -6,6 +6,7 @@
 module Network.Datadog.APM where
 
 import Control.Monad.Catch (MonadCatch, MonadThrow, MonadMask)
+import Control.Exception (throw)
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.Writer
@@ -38,11 +39,14 @@ localApmAgentUrl :: String
 localApmAgentUrl = "http://localhost:8126"
 
 mkApmClient :: (MonadIO m, MonadThrow m) => String -> m APMClient
-mkApmClient str = do
+mkApmClient str = mkApmClient' str throw
+
+mkApmClient' :: (MonadIO m, MonadThrow m) => String -> (HttpException -> IO ([Trace] -> [Trace])) -> m APMClient
+mkApmClient' str errHandler = do
   baseReq <- parseRequest str
   ref <- newIORef baseReq
   let settings = defaultReaperSettings
-        { reaperAction = \workload -> case splitAt 100 workload of
+        { reaperAction = \workload -> handle errHandler $ case splitAt 100 workload of
             (traces, rest) -> do
               m <- getGlobalManager
               req <- readIORef ref
