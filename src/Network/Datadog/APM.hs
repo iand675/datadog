@@ -357,6 +357,9 @@ instance MonadUnliftIO m => MonadUnliftIO (NoTraceT m) where
     (UnliftIO ui) <- askUnliftIO
     return $ UnliftIO (ui . runNoTraceT)
 
+instance MonadTrans NoTraceT where
+  lift = NoTraceT
+
 deriving instance MonadError e m => MonadError e (NoTraceT m)
 deriving instance MonadReader r m => MonadReader r (NoTraceT m)
 deriving instance MonadWriter w m => MonadWriter w (NoTraceT m)
