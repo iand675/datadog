@@ -8,6 +8,7 @@ module Network.Datadog.Types where
 import           Data.ByteString.Char8 (ByteString)
 import           Data.DList (DList)
 import           Data.HashMap.Strict (HashMap)
+import           Data.Semigroup
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Int (Int64)
@@ -209,7 +210,7 @@ data WrappedEvent = WrappedEvent { wrappedEvent :: Event }
 data WrappedEvents = WrappedEvents { wrappedEvents :: [Event] }
 
 newtype Series = Series { fromSeries :: DList Metric }
-                 deriving (Monoid)
+                 deriving (Semigroup, Monoid)
 
 data MetricPoints = Gauge   [(POSIXTime, Float)]
                   | Counter [(POSIXTime, Int64)]

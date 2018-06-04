@@ -50,7 +50,7 @@ prependBool p a = if p then (a :) else id
 
 datadogHttp :: Environment-> String -> [(String, String)] -> StdMethod -> Maybe LBS.ByteString -> IO LBS.ByteString
 datadogHttp (Environment keys baseUrl manager) endpoint q httpMethod content = do
-  initReq <- parseUrl $ baseUrl ++ endpoint
+  initReq <- parseUrlThrow $ baseUrl ++ endpoint
   let body = RequestBodyLBS $ fromMaybe LBS.empty content
       headers = [("Content-type", "application/json") | isJust content]
       apiQuery = [("api_key", apiKey keys)
@@ -72,7 +72,7 @@ decodeDatadog funcname body = either (throwIO . AssertionFailed . failstring) re
                        "\": " ++ e ++ ": " ++ unpack (decodeUtf8 body)
 
 baseRequest :: Request
-baseRequest = fromJust $ parseUrl "https://app.datadoghq.com"
+baseRequest = fromJust $ parseUrlThrow "https://app.datadoghq.com"
 
 class DatadogCredentials s where
   signRequest :: s -> Request -> Request
