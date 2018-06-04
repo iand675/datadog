@@ -363,3 +363,28 @@ instance FromJSON Monitor where
   parseJSON (Object v) = modifyFailure ("Monitor: " ++ ) $
                          Monitor <$> v .: "id" <*> parseJSON (Object v)
   parseJSON a = modifyFailure ("Monitor: " ++) $ typeMismatch "Object" a
+
+{--
+-- Does not work  
+instance ToJSON NewUser where
+  toJSON newuser = Object $ HM.insert "handle" (toJSON (newuser ^. handle')) basemap
+    where (Object basemap) = toJSON (datadoguser ^. details)
+
+-- Does not work  
+instance FromJSON DatadogUser where
+  parseJSON (Object v) = modifyFailure ("User: " ++ ) $
+                         DatadogUser <$> v .: "handle" <*> parseJSON (Object v)
+  parseJSON a = modifyFailure ("User: " ++) $ typeMismatch "Object" a 
+--}
+              
+instance ToJSON UserAccessRole where
+  toJSON St = Data.Aeson.String "st"
+  toJSON Adm = Data.Aeson.String "adm"
+  toJSON Ro = Data.Aeson.String "ro"
+
+instance FromJSON UserAccessRole where
+  parseJSON (Data.Aeson.String "st") = return St
+  parseJSON (Data.Aeson.String "adm") = return Adm
+  parseJSON (Data.Aeson.String "ro") = return Ro
+  parseJSON (Data.Aeson.String s) = fail $ "UserAccessRole: String " ++ show s ++ " is not a valid UserAccessRole"
+  parseJSON a = modifyFailure ("UserAccessRole: " ++) $ typeMismatch "String" a
