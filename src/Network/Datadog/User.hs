@@ -5,24 +5,20 @@ Users in Datadog.
 -}
 
 module Network.Datadog.User
-( UserSpec(..)
-, DatadogUser(userHandle, userDetails)
+( DatadogUser(userHandle)
 , UserHandle
-, minimalUserSpec
+, UserAccessRole
 , newUser
+, updateUser
+, disableUser
 , loadUser
 , loadUsers
 ) where
 
-import Control.Monad (liftM)
+    
 import Control.Monad (void)
-
-import Data.Aeson hiding (Error, Success)
--- import qualified Data.Aeson (Result(Success))
-import Data.Text (Text)
-
+import Data.Aeson
 import Network.HTTP.Types
-
 import Network.Datadog.Internal
 
 
@@ -31,9 +27,29 @@ import Network.Datadog.Internal
 newUser :: UserHandle -> NewUser
 newUser email = NewUser email Nothing Nothing
 
+-- | Update a user in Datadog
+updateUser :: Environment -> UserHandle -> UserAccessRole -> IO User
+updateUser env uid uar =
+  let path = "user/" ++ show uid
+  in datadogHttp env path [] PUT (Just $ encode uar) >>=
+     decodeDatadog "updateUser"
+
+-- | Disable a user in Datadog
+disableUser :: Environment -> UserHandle -> IO ()
+disableUser env uid =
+  let path "user/" ++ show uid
+  in void $ datadogHttp env path [] DELETE Nothing
 
 -- | Load a user from Datadog by its handle.
-loadUser :: Environment -> UserHandle -> IO ()
+loadUser :: Environment -> UserHandle -> IO User
 loadUser env userHandle = 
-  let path = "users/" ++ show userHandle
-  in void $ datadogHttp env path [] POST Nothing
+  let path = "user/" ++ show userHandle
+  in datadogHttp env path [] GET Nothing >>=
+     decodeDatadog "loadUser"
+
+-- | Load all users from a given org
+loadUsers :: Environment -> Bool -> IO [User]
+loadUsers env =
+    let path = "user"
+    in datadogHttp env path GET Nothing >>=
+       decodeDatadog "loadUsers"
