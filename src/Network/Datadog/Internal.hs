@@ -364,18 +364,14 @@ instance FromJSON Monitor where
                          Monitor <$> v .: "id" <*> parseJSON (Object v)
   parseJSON a = modifyFailure ("Monitor: " ++) $ typeMismatch "Object" a
 
-{--
--- Does not work  
 instance ToJSON NewUser where
   toJSON newuser = Object $ HM.insert "handle" (toJSON (newuser ^. handle')) basemap
-    where (Object basemap) = toJSON (datadoguser ^. details)
-
--- Does not work  
+    where (Object basemap) = toJSON (newuser ^. details)
+ 
 instance FromJSON DatadogUser where
   parseJSON (Object v) = modifyFailure ("User: " ++ ) $
                          DatadogUser <$> v .: "handle" <*> parseJSON (Object v)
   parseJSON a = modifyFailure ("User: " ++) $ typeMismatch "Object" a 
---}
               
 instance ToJSON UserAccessRole where
   toJSON St = Data.Aeson.String "st"
