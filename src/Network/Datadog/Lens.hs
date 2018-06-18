@@ -15,6 +15,8 @@ makeFields ''Metric
 makeFields ''MonitorOptions
 makeFields ''MonitorSpec
 makeFields ''Monitor
+makeFields ''NewUser
+makeFields ''DatadogUser
 makeClassyPrisms ''Tag
 makeClassyPrisms ''CheckStatus
 makeClassyPrisms ''EventPriority

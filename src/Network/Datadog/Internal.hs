@@ -366,7 +366,7 @@ instance FromJSON Monitor where
 
 instance ToJSON NewUser where
   toJSON newuser = Object $ HM.insert "handle" (toJSON (newuser ^. handle')) basemap
-    where (Object basemap) = toJSON (datadoguser ^. details)
+    where (Object basemap) = toJSON (newuser ^. details)
  
 instance FromJSON DatadogUser where
   parseJSON (Object v) = modifyFailure ("User: " ++ ) $

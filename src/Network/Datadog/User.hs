@@ -21,8 +21,6 @@ import Data.Aeson
 import Network.HTTP.Types
 import Network.Datadog.Internal
 
-
-
 -- | Store a new user in Datadog.
 newUser :: UserHandle -> NewUser
 newUser email = NewUser email Nothing Nothing

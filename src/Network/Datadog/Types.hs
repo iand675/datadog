@@ -305,7 +305,7 @@ data NewUser = NewUser
   } deriving (Eq)
 
 -- | A Datadog user. 
-data User = DatadogUser 
+data DatadogUser = DatadogUser 
   { userHandle :: Text
   , userEmail :: Text
   , userAccessRole :: UserAccessRole
