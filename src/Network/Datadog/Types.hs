@@ -221,7 +221,7 @@ data Metric = Metric
   , metricHost   :: Maybe Text
   , metricTags   :: [Text]
   }
- 
+
 -- | Each monitor is of a specific type, which determines what sort of check
 -- the monitor performs.
 data MonitorType = MetricAlert
@@ -281,31 +281,24 @@ data Monitor = Monitor { monitorId' :: MonitorId
                        } deriving (Eq)
 
 -- Each user can have a role
-data UserAccessRole = St
--- Standard user
-                     | Adm
--- Admin user
-                     | Ro
--- Read only user
-                     deriving (Eq)
-    
-instance Show UserAccessRole where
-  show St = "st"
-  show Adm = "adm"
-  show Ro = "ro"
+data UserAccessRole
+  = StandardRole -- ^ Standard user
+  | AdminRole -- ^ Admin user
+  | ReadOnlyRole -- ^ Read only user
+  deriving (Eq, Show)
 
 -- | Datadog's internal reference to a specific user.
 type UserHandle = Text
 
 -- | A brand new user
-data NewUser = NewUser 
+data NewUser = NewUser
   { newUserHandle :: UserHandle
   , newUserName   :: Maybe Text
   , newUserAccessRole :: Maybe UserAccessRole
-  } deriving (Eq)
+  } deriving (Show, Eq)
 
--- | A Datadog user. 
-data DatadogUser = DatadogUser 
+-- | A Datadog user.
+data DatadogUser = DatadogUser
   { userHandle :: Text
   , userEmail :: Text
   , userAccessRole :: UserAccessRole
