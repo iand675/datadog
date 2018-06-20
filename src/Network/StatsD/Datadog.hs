@@ -55,7 +55,7 @@ module Network.StatsD.Datadog (
   StatsClient(Dummy)
 ) where
 import Control.Applicative ((<$>))
-import Control.Exception (bracket)
+import Control.Exception (SomeException, bracket, catch)
 import Control.Lens
 import Control.Monad (void)
 import Control.Monad.Base
@@ -344,16 +344,23 @@ instance ToStatsD ServiceCheck where
         sequence_ $ intersperse (appendChar7 ',') $ map fromTag ts
 
 data DogStatsSettings = DogStatsSettings
-  { dogStatsSettingsHost       :: HostName -- ^ The hostname or IP of the DogStatsD server (default: 127.0.0.1)
-  , dogStatsSettingsPort       :: !Int -- ^ The port that the DogStatsD server is listening on (default: 8125)
-  , dogStatsSettingsBufferSize :: !Int -- ^ Maximum buffer size. Stats are sent over UDP, so the maximum possible value is 65507 bytes per packet. In some scenarios, however, you may wish to send smaller packets. (default: 65507)
-  , dogStatsSettingsMaxDelay   :: !Int -- ^ Maximum amount of time (in microseconds) between having no stats to send locally and when new stats will be sent to the statsd server. (default: 1 second)
+  { dogStatsSettingsHost        :: HostName -- ^ The hostname or IP of the DogStatsD server (default: 127.0.0.1)
+  , dogStatsSettingsPort        :: !Int -- ^ The port that the DogStatsD server is listening on (default: 8125)
+  , dogStatsSettingsBufferSize  :: !Int -- ^ Maximum buffer size. Stats are sent over UDP, so the maximum possible value is 65507 bytes per packet. In some scenarios, however, you may wish to send smaller packets. (default: 65507)
+  , dogStatsSettingsMaxDelay    :: !Int -- ^ Maximum amount of time (in microseconds) between having no stats to send locally and when new stats will be sent to the statsd server. (default: 1 second)
+  , dogStatsSettingsOnException :: (SomeException -> Seq.Seq ByteString -> IO (Seq.Seq ByteString -> Seq.Seq ByteString)) -- ^ Handler to recover from exceptions thrown while sending stats to the server. Caution: Throwing an exception from this handler will shut down the worker that sends stats to the server, but is not able to prevent you from enqueuing stats via the client. Default: print the exception and throw away any accumulated stats.
   }
 
 makeFields ''DogStatsSettings
 
 defaultSettings :: DogStatsSettings
-defaultSettings = DogStatsSettings "127.0.0.1" 8125 65507 1000000
+defaultSettings = DogStatsSettings
+  { dogStatsSettingsHost = "127.0.0.1"
+  , dogStatsSettingsPort = 8125
+  , dogStatsSettingsBufferSize = 65507
+  , dogStatsSettingsMaxDelay = 1000000
+  , dogStatsSettingsOnException = \e _ -> putStrLn (show e ++ "\nDropping all accumulated stats due to error. This behavior may be overridden by setting the onException handler of DogStatsSettings.") >> return (const Seq.Empty)
+  }
 
 accumulateStats :: Int {- ^ Max buffer size -} -> Seq.Seq ByteString {- ^ Items to send -} -> (L.ByteString, Seq.Seq ByteString)
 accumulateStats maxBufSize = go 0 []
@@ -380,12 +387,14 @@ mkStatsClient s = liftBase $ do
       connect sock (addrAddress serverAddr)
       h <- socketToHandle sock WriteMode
       hSetBuffering h (BlockBuffering $ Just $ dogStatsSettingsBufferSize s)
-      let reaperSettings = defaultReaperSettings { reaperAction = builderAction h (dogStatsSettingsBufferSize s)
-                                                 , reaperDelay = dogStatsSettingsMaxDelay s
-                                                 , reaperCons = \item work -> work Seq.|> runUtf8Builder item
-                                                 , reaperNull = Seq.null
-                                                 , reaperEmpty = Seq.empty
-                                                 }
+      let reaperSettings = defaultReaperSettings
+            { reaperAction = \stats -> catch (builderAction h (dogStatsSettingsBufferSize s) stats) $ \e ->
+                dogStatsSettingsOnException s e stats
+            , reaperDelay = dogStatsSettingsMaxDelay s
+            , reaperCons = \item work -> work Seq.|> runUtf8Builder item
+            , reaperNull = Seq.null
+            , reaperEmpty = Seq.empty
+            }
       r <- mkReaper reaperSettings
       return $ StatsClient h r s
 
@@ -419,7 +428,7 @@ data StatsClient = StatsClient
 -- >   send client $ metric "wombat.force_count" Gauge (9001 :: Int)
 -- >   send client $ serviceCheck "Wombat Radar" ServiceOk
 send :: (MonadBase IO m, ToStatsD v) => StatsClient -> v -> m ()
-send (StatsClient _ r _) v = liftBase $ reaperAdd r (toStatsD v >> appendChar7 '\n')
+send StatsClient{statsClientReaper} v = liftBase $ reaperAdd statsClientReaper (toStatsD v >> appendChar7 '\n')
 send Dummy _ = return ()
 {-# INLINEABLE send #-}
 
