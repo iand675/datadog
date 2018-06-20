@@ -1,5 +1,6 @@
 {-| DogStatsD accepts custom application metrics points over UDP, and then periodically aggregates and forwards the metrics to Datadog, where they can be graphed on dashboards. The data is sent by using a client library such as this one that communicates with a DogStatsD server. -}
 
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -46,6 +47,8 @@ module Network.StatsD.Datadog (
   HasAlertType(..),
   HasHost(..),
   HasPort(..),
+  HasBufferSize(..),
+  HasMaxDelay(..),
   HasStatus(..),
   HasMessage(..),
   -- * Dummy client
@@ -54,26 +57,31 @@ module Network.StatsD.Datadog (
 import Control.Applicative ((<$>))
 import Control.Exception (bracket)
 import Control.Lens
+import Control.Monad (void)
 import Control.Monad.Base
 import Control.Monad.Trans.Control
 import Control.Reaper
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as L
 import Data.BufferBuilder.Utf8
 import Data.List (intersperse)
-import Data.Monoid
-import Data.Maybe (isNothing)
-import Data.Int
-import Data.Word
+import qualified Data.Sequence as Seq
 import qualified Data.ByteString as B
 import qualified Data.Foldable as F
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
-import Data.Time.Format
 import Data.Text.Encoding (encodeUtf8)
-import Data.ByteString.Short hiding (empty)
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
-import System.IO (hClose, hSetBuffering, BufferMode(LineBuffering), IOMode(WriteMode), Handle)
+import System.IO
+  ( BufferMode(BlockBuffering)
+  , Handle
+  , IOMode(WriteMode)
+  , hClose
+  , hFlush
+  , hSetBuffering
+  )
 
 epochTime :: UTCTime -> Int
 epochTime = round . utcTimeToPOSIXSeconds
@@ -336,15 +344,29 @@ instance ToStatsD ServiceCheck where
         sequence_ $ intersperse (appendChar7 ',') $ map fromTag ts
 
 data DogStatsSettings = DogStatsSettings
-  { dogStatsSettingsHost     :: HostName -- ^ The hostname or IP of the DogStatsD server (default: 127.0.0.1)
-  , dogStatsSettingsPort     :: Int      -- ^ The port that the DogStatsD server is listening on (default: 8125)
+  { dogStatsSettingsHost       :: HostName -- ^ The hostname or IP of the DogStatsD server (default: 127.0.0.1)
+  , dogStatsSettingsPort       :: !Int -- ^ The port that the DogStatsD server is listening on (default: 8125)
+  , dogStatsSettingsBufferSize :: !Int -- ^ Maximum buffer size. Stats are sent over UDP, so the maximum possible value is 65507 bytes per packet. In some scenarios, however, you may wish to send smaller packets. (default: 65507)
+  , dogStatsSettingsMaxDelay   :: !Int -- ^ Maximum amount of time (in microseconds) between having no stats to send locally and when new stats will be sent to the statsd server. (default: 1 second)
   }
 
 makeFields ''DogStatsSettings
 
 defaultSettings :: DogStatsSettings
-defaultSettings = DogStatsSettings "127.0.0.1" 8125
+defaultSettings = DogStatsSettings "127.0.0.1" 8125 65507 1000000
 
+accumulateStats :: Int {- ^ Max buffer size -} -> Seq.Seq ByteString {- ^ Items to send -} -> (L.ByteString, Seq.Seq ByteString)
+accumulateStats maxBufSize = go 0 []
+  where
+    go :: Int -> [ByteString] -> Seq.Seq ByteString -> (L.ByteString, Seq.Seq ByteString)
+    go !accum chunks s@(bs Seq.:<| rest) = let newSize = B.length bs + accum in if newSize > maxBufSize
+      then (finalizeChunks chunks, s)
+      else go newSize (bs : chunks) rest
+    go _ chunks Seq.Empty = (finalizeChunks chunks, Seq.Empty)
+    finalizeChunks :: [ByteString] -> L.ByteString
+    finalizeChunks = L.fromChunks . reverse
+
+-- | Create a stats client. Be sure to close it with 'finalizeStatsClient' in order to send any pending stats and close the underlying handle when done using it. Alternatively, use 'withDogStatsD' to finalize it automatically.
 mkStatsClient :: MonadBase IO m => DogStatsSettings -> m StatsClient
 mkStatsClient s = liftBase $ do
   addrInfos <- getAddrInfo
@@ -357,27 +379,33 @@ mkStatsClient s = liftBase $ do
       sock <- socket (addrFamily serverAddr) Datagram defaultProtocol
       connect sock (addrAddress serverAddr)
       h <- socketToHandle sock WriteMode
-      hSetBuffering h LineBuffering
-      let builderAction work = do
-            F.mapM_ (B.hPut h . runUtf8Builder) work
-            return $ const Nothing
-          reaperSettings = defaultReaperSettings { reaperAction = builderAction
-                                                 , reaperDelay = 1000000 -- one second
-                                                 , reaperCons = \item work -> Just $ maybe item (>> item) work
-                                                 , reaperNull = isNothing
-                                                 , reaperEmpty = Nothing
+      hSetBuffering h (BlockBuffering $ Just $ dogStatsSettingsBufferSize s)
+      let reaperSettings = defaultReaperSettings { reaperAction = builderAction h (dogStatsSettingsBufferSize s)
+                                                 , reaperDelay = dogStatsSettingsMaxDelay s
+                                                 , reaperCons = \item work -> work Seq.|> runUtf8Builder item
+                                                 , reaperNull = Seq.null
+                                                 , reaperEmpty = Seq.empty
                                                  }
       r <- mkReaper reaperSettings
-      return $ StatsClient h r
+      return $ StatsClient h r s
 
+builderAction :: Handle -> Int -> Seq.Seq ByteString -> IO (Seq.Seq ByteString -> Seq.Seq ByteString)
+builderAction _ _ Seq.Empty = return $ const Seq.Empty
+builderAction h maxBufSize s = do
+  let (toFlush, rest) = accumulateStats maxBufSize s
+  L.hPut h toFlush
+  hFlush h -- safety flush
+  builderAction h maxBufSize rest
+
+-- | Create a 'StatsClient' and provide it to the provided function. The 'StatsClient' will be finalized as soon as the inner block is exited, whether normally or via an exception.
 withDogStatsD :: MonadBaseControl IO m => DogStatsSettings -> (StatsClient -> m a) -> m a
-withDogStatsD s f = liftBaseOp
-  (bracket (mkStatsClient s) (\c -> finalizeStatsClient c >> hClose (statsClientHandle c))) f
+withDogStatsD s = liftBaseOp (bracket (mkStatsClient s) finalizeStatsClient)
 
 -- | Note that Dummy is not the only constructor, just the only publicly available one.
 data StatsClient = StatsClient
                    { statsClientHandle :: !Handle
-                   , statsClientReaper :: Reaper (Maybe (Utf8Builder ())) (Utf8Builder ())
+                   , statsClientReaper :: Reaper (Seq.Seq ByteString) (Utf8Builder ())
+                   , statsClientSettings :: DogStatsSettings
                    }
                  | Dummy -- ^ Just drops all stats.
 
@@ -391,10 +419,14 @@ data StatsClient = StatsClient
 -- >   send client $ metric "wombat.force_count" Gauge (9001 :: Int)
 -- >   send client $ serviceCheck "Wombat Radar" ServiceOk
 send :: (MonadBase IO m, ToStatsD v) => StatsClient -> v -> m ()
-send (StatsClient _ r) v = liftBase $ reaperAdd r (toStatsD v >> appendChar7 '\n')
+send (StatsClient _ r _) v = liftBase $ reaperAdd r (toStatsD v >> appendChar7 '\n')
 send Dummy _ = return ()
 {-# INLINEABLE send #-}
 
+-- | Send all pending unsent events and close the connection to the specified statsd server.
 finalizeStatsClient :: StatsClient -> IO ()
-finalizeStatsClient (StatsClient h r) = reaperStop r >>= F.mapM_ (B.hPut h . runUtf8Builder)
+finalizeStatsClient (StatsClient h r s) = do
+  remainingStats <- reaperStop r
+  void $ builderAction h (dogStatsSettingsBufferSize s) remainingStats
+  hClose h
 finalizeStatsClient Dummy = return ()

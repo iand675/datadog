@@ -50,6 +50,7 @@ dependencies:
   - base >= 4.7 && < 5
   - buffer-builder
   - bytestring
+  - containers
   - dlist
   - http-client
   - http-client-tls
