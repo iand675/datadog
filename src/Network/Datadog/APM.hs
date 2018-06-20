@@ -16,7 +16,7 @@ module Network.Datadog.APM
   , sendTrace
   , MTrace(..)
   , Trace(..)
-  , TraceState
+  , TraceState(spanStack)
   , createMutableTrace
   , completeMutableTrace
   , modifyMutableTrace
