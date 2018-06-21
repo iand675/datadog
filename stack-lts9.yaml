@@ -2,8 +2,7 @@ flags: {}
 extra-package-dbs: []
 packages:
 - '.'
-resolver: lts-11.14
+resolver: lts-9.21
 extra-deps:
-- buffer-builder-0.2.4.5
 - unliftio-0.2.7.0
 - unliftio-core-0.1.1.0

@@ -71,6 +71,7 @@ dependencies:
   - transformers-base
   - unliftio
   - unordered-containers
+  - unliftio
   - vector
 
 library:

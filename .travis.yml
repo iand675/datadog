@@ -19,11 +19,9 @@ cache:
 # things like change flags or use --stack-yaml to point to a different
 # file.
 env:
-  - ARGS=""
-  - ARGS="--resolver lts-7"
-  - ARGS="--resolver lts-8"
-  - ARGS="--resolver lts-10"
-  - ARGS="--resolver lts-11"
+  - STACK_YAML="stack-lts7.yaml"
+  - STACK_YAML="stack-lts9.yaml"
+  - STACK_YAML="stack.yaml"
   - ARGS="--resolver lts"
   - ARGS="--resolver nightly"
 
