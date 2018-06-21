@@ -29,6 +29,7 @@ library
                        text,
                        buffer-builder,
                        auto-update,
+                       mtl,
                        network,
                        unordered-containers,
                        vector,
