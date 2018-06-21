@@ -2,6 +2,6 @@ flags: {}
 extra-package-dbs: []
 packages:
 - '.'
-resolver: lts-11.0
+resolver: lts-11.14
 extra-deps:
 - buffer-builder-0.2.4.5

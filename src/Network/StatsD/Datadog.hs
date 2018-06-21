@@ -49,17 +49,16 @@ module Network.StatsD.Datadog (
   HasPort(..),
   HasBufferSize(..),
   HasMaxDelay(..),
+  HasOnException(..),
   HasStatus(..),
   HasMessage(..),
   -- * Dummy client
   StatsClient(Dummy)
 ) where
 import Control.Applicative ((<$>))
-import Control.Exception (SomeException, bracket, catch)
+import Control.Exception (SomeException)
 import Control.Lens
 import Control.Monad (void)
-import Control.Monad.Base
-import Control.Monad.Trans.Control
 import Control.Reaper
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as L
@@ -78,10 +77,8 @@ import System.IO
   ( BufferMode(BlockBuffering)
   , Handle
   , IOMode(WriteMode)
-  , hClose
-  , hFlush
-  , hSetBuffering
   )
+import UnliftIO
 
 epochTime :: UTCTime -> Int
 epochTime = round . utcTimeToPOSIXSeconds
@@ -280,7 +277,11 @@ renderEvent e = do
         appendBS7 "|#"
         sequence_ $ intersperse (appendChar7 ',') $ map fromTag ts
 
-data ServiceCheckStatus = ServiceOk | ServiceWarning | ServiceCritical | ServiceUnknown
+data ServiceCheckStatus
+  = ServiceOk
+  | ServiceWarning
+  | ServiceCritical
+  | ServiceUnknown
   deriving (Read, Show, Eq, Ord, Enum)
 
 -- | 'ServiceCheck'
@@ -309,9 +310,10 @@ data ServiceCheck = ServiceCheck
 
 makeFields ''ServiceCheck
 
-serviceCheck :: Text -- ^ name
-             -> ServiceCheckStatus
-             -> ServiceCheck
+serviceCheck ::
+     Text -- ^ name
+  -> ServiceCheckStatus
+  -> ServiceCheck
 serviceCheck n s = ServiceCheck n s Nothing Nothing Nothing []
 
 -- | Convert an 'Event', 'Metric', or 'StatusCheck' to their wire format.
@@ -354,28 +356,39 @@ data DogStatsSettings = DogStatsSettings
 makeFields ''DogStatsSettings
 
 defaultSettings :: DogStatsSettings
-defaultSettings = DogStatsSettings
-  { dogStatsSettingsHost = "127.0.0.1"
-  , dogStatsSettingsPort = 8125
-  , dogStatsSettingsBufferSize = 65507
-  , dogStatsSettingsMaxDelay = 1000000
-  , dogStatsSettingsOnException = \e _ -> putStrLn (show e ++ "\nDropping all accumulated stats due to error. This behavior may be overridden by setting the onException handler of DogStatsSettings.") >> return (const Seq.Empty)
-  }
+defaultSettings =
+  DogStatsSettings
+    { dogStatsSettingsHost = "127.0.0.1"
+    , dogStatsSettingsPort = 8125
+    , dogStatsSettingsBufferSize = 65507
+    , dogStatsSettingsMaxDelay = 1000000
+    , dogStatsSettingsOnException =
+        \e _ ->
+          putStrLn
+            (show e ++
+             "\nDropping all accumulated stats due to error. This behavior may be overridden by setting the onException handler of DogStatsSettings.") >>
+          return (const Seq.empty)
+    }
 
-accumulateStats :: Int {- ^ Max buffer size -} -> Seq.Seq ByteString {- ^ Items to send -} -> (L.ByteString, Seq.Seq ByteString)
+accumulateStats ::
+     Int -- ^ Max buffer size
+  -> Seq.Seq ByteString -- ^ Items to send
+  -> (L.ByteString, Seq.Seq ByteString)
 accumulateStats maxBufSize = go 0 []
   where
     go :: Int -> [ByteString] -> Seq.Seq ByteString -> (L.ByteString, Seq.Seq ByteString)
-    go !accum chunks s@(bs Seq.:<| rest) = let newSize = B.length bs + accum in if newSize > maxBufSize
-      then (finalizeChunks chunks, s)
-      else go newSize (bs : chunks) rest
-    go _ chunks Seq.Empty = (finalizeChunks chunks, Seq.Empty)
+    go !accum chunks s = case Seq.viewl s of
+      Seq.EmptyL -> (finalizeChunks chunks, Seq.empty)
+      (bs Seq.:< rest) -> let newSize = B.length bs + accum in if newSize > maxBufSize
+        then (finalizeChunks chunks, s)
+        else go newSize (bs : chunks) rest
+
     finalizeChunks :: [ByteString] -> L.ByteString
     finalizeChunks = L.fromChunks . reverse
 
 -- | Create a stats client. Be sure to close it with 'finalizeStatsClient' in order to send any pending stats and close the underlying handle when done using it. Alternatively, use 'withDogStatsD' to finalize it automatically.
-mkStatsClient :: MonadBase IO m => DogStatsSettings -> m StatsClient
-mkStatsClient s = liftBase $ do
+mkStatsClient :: MonadIO m => DogStatsSettings -> m StatsClient
+mkStatsClient s = liftIO $ do
   addrInfos <- getAddrInfo
                (Just $ defaultHints { addrFlags = [AI_PASSIVE] })
                (Just $ s ^. host)
@@ -399,16 +412,17 @@ mkStatsClient s = liftBase $ do
       return $ StatsClient h r s
 
 builderAction :: Handle -> Int -> Seq.Seq ByteString -> IO (Seq.Seq ByteString -> Seq.Seq ByteString)
-builderAction _ _ Seq.Empty = return $ const Seq.Empty
-builderAction h maxBufSize s = do
-  let (toFlush, rest) = accumulateStats maxBufSize s
-  L.hPut h toFlush
-  hFlush h -- safety flush
-  builderAction h maxBufSize rest
+builderAction h maxBufSize s = case Seq.viewl s of
+  Seq.EmptyL -> return $ const Seq.empty
+  _ -> do
+    let (toFlush, rest) = accumulateStats maxBufSize s
+    L.hPut h toFlush
+    hFlush h -- safety flush
+    builderAction h maxBufSize rest
 
 -- | Create a 'StatsClient' and provide it to the provided function. The 'StatsClient' will be finalized as soon as the inner block is exited, whether normally or via an exception.
-withDogStatsD :: MonadBaseControl IO m => DogStatsSettings -> (StatsClient -> m a) -> m a
-withDogStatsD s = liftBaseOp (bracket (mkStatsClient s) finalizeStatsClient)
+withDogStatsD :: MonadUnliftIO m => DogStatsSettings -> (StatsClient -> m a) -> m a
+withDogStatsD s = bracket (mkStatsClient s) finalizeStatsClient
 
 -- | Note that Dummy is not the only constructor, just the only publicly available one.
 data StatsClient = StatsClient
@@ -427,14 +441,15 @@ data StatsClient = StatsClient
 -- >   send client $ event "Wombat attack" "A host of mighty wombats has breached the gates"
 -- >   send client $ metric "wombat.force_count" Gauge (9001 :: Int)
 -- >   send client $ serviceCheck "Wombat Radar" ServiceOk
-send :: (MonadBase IO m, ToStatsD v) => StatsClient -> v -> m ()
-send StatsClient{statsClientReaper} v = liftBase $ reaperAdd statsClientReaper (toStatsD v >> appendChar7 '\n')
+send :: (MonadIO m, ToStatsD v) => StatsClient -> v -> m ()
+send StatsClient {statsClientReaper} v =
+  liftIO $ reaperAdd statsClientReaper (toStatsD v >> appendChar7 '\n')
 send Dummy _ = return ()
 {-# INLINEABLE send #-}
 
 -- | Send all pending unsent events and close the connection to the specified statsd server.
-finalizeStatsClient :: StatsClient -> IO ()
-finalizeStatsClient (StatsClient h r s) = do
+finalizeStatsClient :: MonadIO m => StatsClient -> m ()
+finalizeStatsClient (StatsClient h r s) = liftIO $ do
   remainingStats <- reaperStop r
   void $ builderAction h (dogStatsSettingsBufferSize s) remainingStats
   hClose h

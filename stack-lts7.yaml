@@ -1,0 +1,8 @@
+flags: {}
+extra-package-dbs: []
+packages:
+- '.'
+resolver: lts-7.24
+extra-deps:
+- unliftio-0.2.7.0
+- unliftio-core-0.1.1.0
