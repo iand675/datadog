@@ -5,7 +5,8 @@ Users in Datadog.
 -}
 
 module Network.Datadog.User
-( DatadogUser(userHandle)
+( NewUser(newUserHandle)
+, DatadogUser(userHandle)
 , UserHandle
 , UserAccessRole
 , newUser

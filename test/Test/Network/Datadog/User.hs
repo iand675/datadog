@@ -7,7 +7,9 @@ import Test.Hspec (Spec, describe, expectationFailure, it)
 
 import Network.Datadog (Environment, createEnvironment, loadKeysFromEnv)
 import Network.Datadog.User
-  ( newUser
+  ( UserHandle
+  , newUserHandle
+  , newUser
   , updateUser
   , disableUser
   , loadUser
@@ -23,6 +25,6 @@ spec = describe "User operations" $ do
     let userEmail = "test@example.com"
     user1 <- newUser userEmail
     -- load an existing user
-    user2 <- loadUser env (user1 ^. handle)
+    user2 <- loadUser env (user1 ^. newUserHandle)
     when (user1 /= user2) $
       expectationFailure "Failed"
