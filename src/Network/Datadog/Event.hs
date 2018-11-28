@@ -35,7 +35,7 @@ import Control.Monad (liftM)
 import Data.Aeson hiding (Error, Success)
 -- import qualified Data.Aeson (Result(Success))
 import Data.List (intercalate)
-import Data.Text (Text)
+import Data.Text (Text, unpack)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 
@@ -88,7 +88,7 @@ loadEvents :: Environment
 loadEvents env (startTime, endTime) resultPriority filterTags =
   let path = "events"
       q = prependMaybe (\a -> ("priority", show a)) resultPriority $
-            prependBool (not $ null filterTags) ("tags", intercalate "," (map show filterTags))
+            prependBool (not $ null filterTags) ("tags", intercalate "," (map unpack filterTags))
             [("start", show (floor (utcTimeToPOSIXSeconds startTime) :: Integer))
             ,("end", show (floor (utcTimeToPOSIXSeconds endTime) :: Integer))
             ]
