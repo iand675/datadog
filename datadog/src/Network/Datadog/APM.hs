@@ -63,6 +63,7 @@ module Network.Datadog.APM
   ) where
 
 import Control.Monad.Catch (MonadCatch, MonadThrow, MonadMask)
+import Control.Monad.Fail
 import Control.Exception (throw)
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -440,6 +441,7 @@ newtype NoTraceT m a = NoTraceT
              , MonadThrow
              , MonadCatch
              , MonadMask
+             , MonadFail
              )
 
 instance MonadUnliftIO m => MonadUnliftIO (NoTraceT m) where
