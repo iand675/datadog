@@ -72,7 +72,7 @@ decodeDatadog funcname body = either (throwIO . AssertionFailed . failstring) re
                        "\": " ++ e ++ ": " ++ unpack (decodeUtf8 body)
 
 baseRequest :: Request
-baseRequest = fromJust $ parseUrlThrow "https://app.datadoghq.com"
+baseRequest = fromJust $ parseUrlThrow "https://api.datadoghq.com"
 
 class DatadogCredentials s where
   signRequest :: s -> Request -> Request
