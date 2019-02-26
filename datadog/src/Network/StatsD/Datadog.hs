@@ -467,6 +467,9 @@ class MonadIO m => MonadStats m where
 class HasStatsClient a where
   statsClient :: a -> StatsClient
 
+instance HasStatsClient StatsClient where
+  statsClient = id
+
 instance (MonadIO m, HasStatsClient a) => MonadStats (ReaderT a m) where
   track x = do
     c <- statsClient <$> ask
