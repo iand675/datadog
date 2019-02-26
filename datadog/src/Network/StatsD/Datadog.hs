@@ -71,6 +71,7 @@ import Data.List (intersperse)
 import qualified Data.Sequence as Seq
 import qualified Data.ByteString as B
 import qualified Data.Foldable as F
+import Data.String
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Clock
@@ -88,6 +89,7 @@ epochTime :: UTCTime -> Int
 epochTime = round . utcTimeToPOSIXSeconds
 
 newtype MetricName = MetricName { fromMetricName :: Text }
+  deriving (Show, Eq, Ord, IsString)
 
 cleanMetricText :: Text -> Text
 cleanMetricText = T.map $ \c -> case c of
