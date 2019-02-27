@@ -426,6 +426,9 @@ instance (MonadUnliftIO m) => MonadTrace (ReaderT MTrace m) where
       { spanStack = r : spanStack innerSt
       }
 
+instance MonadTrace m => MonadTrace (ResourceT m) where
+  currentTrace = lift currentTrace
+  descendIntoSpan r = transResourceT (descendIntoSpan r)
 
 -- | An adapter transformer for dropping all trace data.
 --
