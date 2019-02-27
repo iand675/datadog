@@ -46,23 +46,30 @@ ghc-options:
 
 dependencies:
   - aeson
+  - atomic-primops
   - auto-update
   - base >= 4.7 && < 5
   - buffer-builder
   - bytestring
   - containers
+  - clock
+  - conduit
+  - conduit-extra
   - dlist
+  - exceptions
   - http-client
   - http-client-tls
   - http-types
   - lens
-  - lifted-base
-  - monad-control
+  - resourcet
+  - mtl
+  - mwc-random
   - network
   - old-locale
   - text
   - time
   - transformers-base
+  - unliftio
   - unordered-containers
   - unliftio
   - vector

@@ -1,7 +1,11 @@
 flags: {}
 extra-package-dbs: []
 packages:
-- '.'
+- 'datadog'
+- 'dd-wai-middleware'
+- 'dd-yesod-middleware'
 resolver: lts-11.14
 extra-deps:
 - buffer-builder-0.2.4.5
+- unliftio-0.2.7.0
+- unliftio-core-0.1.1.0

@@ -15,6 +15,9 @@ module Network.StatsD.Datadog (
   mkStatsClient,
   finalizeStatsClient,
   send,
+  -- * Monadic interface
+  MonadStats(..),
+  HasStatsClient(..),
   -- * Data supported by DogStatsD
   metric,
   Metric,
@@ -59,6 +62,7 @@ import Control.Applicative ((<$>))
 import Control.Exception (SomeException)
 import Control.Lens
 import Control.Monad (void)
+import Control.Monad.Reader
 import Control.Reaper
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as L
@@ -67,6 +71,7 @@ import Data.List (intersperse)
 import qualified Data.Sequence as Seq
 import qualified Data.ByteString as B
 import qualified Data.Foldable as F
+import Data.String
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Clock
@@ -84,6 +89,7 @@ epochTime :: UTCTime -> Int
 epochTime = round . utcTimeToPOSIXSeconds
 
 newtype MetricName = MetricName { fromMetricName :: Text }
+  deriving (Show, Eq, Ord, IsString)
 
 cleanMetricText :: Text -> Text
 cleanMetricText = T.map $ \c -> case c of
@@ -454,3 +460,17 @@ finalizeStatsClient (StatsClient h r s) = liftIO $ do
   void $ builderAction h (dogStatsSettingsBufferSize s) remainingStats
   hClose h
 finalizeStatsClient Dummy = return ()
+
+class MonadIO m => MonadStats m where
+  track :: ToStatsD v => v -> m ()
+
+class HasStatsClient a where
+  statsClient :: a -> StatsClient
+
+instance HasStatsClient StatsClient where
+  statsClient = id
+
+instance (MonadIO m, HasStatsClient a) => MonadStats (ReaderT a m) where
+  track x = do
+    c <- statsClient <$> ask
+    send c x

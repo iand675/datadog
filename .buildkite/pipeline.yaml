@@ -1,0 +1,41 @@
+steps:
+  # Default stack.yaml
+  - command: "stack $ARGS build --test --no-run-tests"
+  # LTS 7
+  - command: "stack $ARGS build --test --no-run-tests"
+    env:
+      STACK_YAML: "stack-lts7.yaml"
+  # LTS 9
+  - command: "stack $ARGS build --test --no-run-tests"
+    env:
+      STACK_YAML: "stack-lts9.yaml"
+  # Latest LTS
+  - command: "stack $ARGS build --test --no-run-tests"
+    env:
+      ARGS: "--resolver lts"
+  # Nightly build
+  - command: "stack $ARGS build --test --no-run-tests"
+    env:
+      ARGS: "--resolver nightly"
+
+  - wait
+
+  - command: "stack $ARGS test"
+  - command: "stack $ARGS haddock"
+
+  - command: "stack $ARGS test"
+    env:
+      STACK_YAML: "stack-lts7.yaml"
+
+  - command: "stack $ARGS test"
+    env:
+      STACK_YAML: "stack-lts9.yaml"
+
+
+  - command: "stack $ARGS test"
+    env:
+      ARGS: "--resolver lts"
+
+  - command: "stack $ARGS test"
+    env:
+      ARGS: "--resolver nightly"
