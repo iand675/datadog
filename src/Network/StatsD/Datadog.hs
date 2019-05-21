@@ -27,7 +27,7 @@ module Network.StatsD.Datadog (
   ServiceCheckStatus(..),
   ToStatsD,
   -- * Optional fields
-  Tag,
+  Tag(fromTag),
   tag,
   ToMetricValue(..),
   value,
