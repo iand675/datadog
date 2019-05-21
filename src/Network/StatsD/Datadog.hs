@@ -63,6 +63,7 @@ import Control.Reaper
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as L
 import Data.BufferBuilder.Utf8
+import Data.Function (on)
 import Data.List (intersperse)
 import qualified Data.Sequence as Seq
 import qualified Data.ByteString as B
@@ -71,7 +72,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
-import Data.Text.Encoding (encodeUtf8)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import System.IO
   ( BufferMode(BlockBuffering)
@@ -102,6 +103,9 @@ escapeEventContents = T.replace "\n" "\\n"
 -- For example, if you wanted to measure the performance of two video rendering algorithms,
 -- you could tag the rendering time metric with the version of the algorithm you used.
 newtype Tag = Tag { fromTag :: Utf8Builder () }
+
+instance Show Tag where show = ("Tag " ++) . T.unpack . decodeUtf8 . runUtf8Builder . fromTag
+instance Eq Tag where (==) = (==) `on` show
 
 -- | Create a tag from a key-value pair. Useful for slicing and dicing events in Datadog.
 --
