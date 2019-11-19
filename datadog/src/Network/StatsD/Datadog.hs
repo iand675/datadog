@@ -1,6 +1,7 @@
 {-| DogStatsD accepts custom application metrics points over UDP, and then periodically aggregates and forwards the metrics to Datadog, where they can be graphed on dashboards. The data is sent by using a client library such as this one that communicates with a DogStatsD server. -}
 
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -77,6 +78,8 @@ import qualified Data.Text as T
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import Data.Text.Encoding (encodeUtf8)
+import Data.Int
+import qualified GHC.Stats as Stats
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import System.IO
   ( BufferMode(BlockBuffering)
@@ -474,3 +477,258 @@ instance (MonadIO m, HasStatsClient a) => MonadStats (ReaderT a m) where
   track x = do
     c <- statsClient <$> ask
     send c x
+
+
+
+
+
+-- Stuffs
+
+#if MIN_VERSION_base(4,10,0)
+-- | Convert nanoseconds to milliseconds.
+nsToMs :: Int64 -> Int64
+nsToMs s = round (realToFrac s / (1000000.0 :: Double))
+#else
+-- | Convert seconds to milliseconds.
+sToMs :: Double -> Int64
+sToMs s = round (s * 1000.0)
+#endif
+
+{-
+-- | Register a number of metrics related to garbage collector
+-- behavior.
+--
+-- To enable GC statistics collection, either run your program with
+--
+-- > +RTS -T
+--
+-- or compile it with
+--
+-- > -with-rtsopts=-T
+--
+-- The runtime overhead of @-T@ is very small so it's safe to always
+-- leave it enabled.
+--
+-- Registered counters:
+--
+-- [@rts.gc.bytes_allocated@] Total number of bytes allocated
+--
+-- [@rts.gc.num_gcs@] Number of garbage collections performed
+--
+-- [@rts.gc.num_bytes_usage_samples@] Number of byte usage samples taken
+--
+-- [@rts.gc.cumulative_bytes_used@] Sum of all byte usage samples, can be
+-- used with @numByteUsageSamples@ to calculate averages with
+-- arbitrary weighting (if you are sampling this record multiple
+-- times).
+--
+-- [@rts.gc.bytes_copied@] Number of bytes copied during GC
+--
+-- [@rts.gc.init_cpu_ms@] CPU time used by the init phase, in
+-- milliseconds. GHC 8.6+ only.
+--
+-- [@rts.gc.init_wall_ms@] Wall clock time spent running the init
+-- phase, in milliseconds. GHC 8.6+ only.
+--
+-- [@rts.gc.mutator_cpu_ms@] CPU time spent running mutator threads,
+-- in milliseconds. This does not include any profiling overhead or
+-- initialization.
+--
+-- [@rts.gc.mutator_wall_ms@] Wall clock time spent running mutator
+-- threads, in milliseconds. This does not include initialization.
+--
+-- [@rts.gc.gc_cpu_ms@] CPU time spent running GC, in milliseconds.
+--
+-- [@rts.gc.gc_wall_ms@] Wall clock time spent running GC, in
+-- milliseconds.
+--
+-- [@rts.gc.cpu_ms@] Total CPU time elapsed since program start, in
+-- milliseconds.
+--
+-- [@rts.gc.wall_ms@] Total wall clock time elapsed since start, in
+-- milliseconds.
+--
+-- Registered gauges:
+--
+-- [@rts.gc.max_bytes_used@] Maximum number of live bytes seen so far
+--
+-- [@rts.gc.current_bytes_used@] Current number of live bytes
+--
+-- [@rts.gc.current_bytes_slop@] Current number of bytes lost to slop
+--
+-- [@rts.gc.max_bytes_slop@] Maximum number of bytes lost to slop at any one time so far
+--
+-- [@rts.gc.peak_megabytes_allocated@] Maximum number of megabytes allocated
+--
+-- [@rts.gc.par_tot_bytes_copied@] Number of bytes copied during GC, minus
+-- space held by mutable lists held by the capabilities.  Can be used
+-- with 'parMaxBytesCopied' to determine how well parallel GC utilized
+-- all cores.
+--
+-- [@rts.gc.par_avg_bytes_copied@] Deprecated alias for
+-- @par_tot_bytes_copied@.
+--
+-- [@rts.gc.par_max_bytes_copied@] Sum of number of bytes copied each GC by
+-- the most active GC thread each GC. The ratio of
+-- @par_tot_bytes_copied@ divided by @par_max_bytes_copied@ approaches
+-- 1 for a maximally sequential run and approaches the number of
+-- threads (set by the RTS flag @-N@) for a maximally parallel run.
+registerGcMetrics :: Store -> IO ()
+registerGcMetrics store =
+#if MIN_VERSION_base(4,10,0)
+    (M.fromList
+     [ ("rts.gc.bytes_allocated"          , Counter . fromIntegral . Stats.allocated_bytes)
+     , ("rts.gc.num_gcs"                  , Counter . fromIntegral . Stats.gcs)
+     , ("rts.gc.num_bytes_usage_samples"  , Counter . fromIntegral . Stats.major_gcs)
+     , ("rts.gc.cumulative_bytes_used"    , Counter . fromIntegral . Stats.cumulative_live_bytes)
+     , ("rts.gc.bytes_copied"             , Counter . fromIntegral . Stats.copied_bytes)
+#if MIN_VERSION_base(4,12,0)
+     , ("rts.gc.init_cpu_ms"              , Counter . nsToMs . Stats.init_cpu_ns)
+     , ("rts.gc.init_wall_ms"             , Counter . nsToMs . Stats.init_elapsed_ns)
+#endif
+     , ("rts.gc.mutator_cpu_ms"           , Counter . nsToMs . Stats.mutator_cpu_ns)
+     , ("rts.gc.mutator_wall_ms"          , Counter . nsToMs . Stats.mutator_elapsed_ns)
+     , ("rts.gc.gc_cpu_ms"                , Counter . nsToMs . Stats.gc_cpu_ns)
+     , ("rts.gc.gc_wall_ms"               , Counter . nsToMs . Stats.gc_elapsed_ns)
+     , ("rts.gc.cpu_ms"                   , Counter . nsToMs . Stats.cpu_ns)
+     , ("rts.gc.wall_ms"                  , Counter . nsToMs . Stats.elapsed_ns)
+     , ("rts.gc.max_bytes_used"           , Gauge . fromIntegral . Stats.max_live_bytes)
+     , ("rts.gc.current_bytes_used"       , Gauge . fromIntegral . Stats.gcdetails_live_bytes . Stats.gc)
+     , ("rts.gc.current_bytes_slop"       , Gauge . fromIntegral . Stats.gcdetails_slop_bytes . Stats.gc)
+     , ("rts.gc.max_bytes_slop"           , Gauge . fromIntegral . Stats.max_slop_bytes)
+     , ("rts.gc.peak_megabytes_allocated" , Gauge . fromIntegral . (`quot` (1024*1024)) . Stats.max_mem_in_use_bytes)
+     , ("rts.gc.par_tot_bytes_copied"     , Gauge . fromIntegral . Stats.par_copied_bytes)
+     , ("rts.gc.par_avg_bytes_copied"     , Gauge . fromIntegral . Stats.par_copied_bytes)
+     , ("rts.gc.par_max_bytes_copied"     , Gauge . fromIntegral . Stats.cumulative_par_max_copied_bytes)
+     ])
+    getRTSStats
+#else
+    (M.fromList
+     [ ("rts.gc.bytes_allocated"          , Counter . Stats.bytesAllocated)
+     , ("rts.gc.num_gcs"                  , Counter . Stats.numGcs)
+     , ("rts.gc.num_bytes_usage_samples"  , Counter . Stats.numByteUsageSamples)
+     , ("rts.gc.cumulative_bytes_used"    , Counter . Stats.cumulativeBytesUsed)
+     , ("rts.gc.bytes_copied"             , Counter . Stats.bytesCopied)
+     , ("rts.gc.mutator_cpu_ms"           , Counter . sToMs . Stats.mutatorCpuSeconds)
+     , ("rts.gc.mutator_wall_ms"          , Counter . sToMs . Stats.mutatorWallSeconds)
+     , ("rts.gc.gc_cpu_ms"                , Counter . sToMs . Stats.gcCpuSeconds)
+     , ("rts.gc.gc_wall_ms"               , Counter . sToMs . Stats.gcWallSeconds)
+     , ("rts.gc.cpu_ms"                   , Counter . sToMs . Stats.cpuSeconds)
+     , ("rts.gc.wall_ms"                  , Counter . sToMs . Stats.wallSeconds)
+     , ("rts.gc.max_bytes_used"           , Gauge . Stats.maxBytesUsed)
+     , ("rts.gc.current_bytes_used"       , Gauge . Stats.currentBytesUsed)
+     , ("rts.gc.current_bytes_slop"       , Gauge . Stats.currentBytesSlop)
+     , ("rts.gc.max_bytes_slop"           , Gauge . Stats.maxBytesSlop)
+     , ("rts.gc.peak_megabytes_allocated" , Gauge . Stats.peakMegabytesAllocated)
+     , ("rts.gc.par_tot_bytes_copied"     , Gauge . gcParTotBytesCopied)
+     , ("rts.gc.par_avg_bytes_copied"     , Gauge . gcParTotBytesCopied)
+     , ("rts.gc.par_max_bytes_copied"     , Gauge . Stats.parMaxBytesCopied)
+     ])
+    getGcStats
+#endif
+    store
+
+#if MIN_VERSION_base(4,10,0)
+-- | Get RTS statistics.
+getRTSStats :: IO Stats.RTSStats
+getRTSStats = do
+    enabled <- Stats.getRTSStatsEnabled
+    if enabled
+        then Stats.getRTSStats
+        else return emptyRTSStats
+
+-- | Empty RTS statistics, as if the application hasn't started yet.
+emptyRTSStats :: Stats.RTSStats
+emptyRTSStats = Stats.RTSStats
+    { gcs                                  = 0
+    , major_gcs                            = 0
+    , allocated_bytes                      = 0
+    , max_live_bytes                       = 0
+    , max_large_objects_bytes              = 0
+    , max_compact_bytes                    = 0
+    , max_slop_bytes                       = 0
+    , max_mem_in_use_bytes                 = 0
+    , cumulative_live_bytes                = 0
+    , copied_bytes                         = 0
+    , par_copied_bytes                     = 0
+    , cumulative_par_max_copied_bytes      = 0
+# if MIN_VERSION_base(4,11,0)
+    , cumulative_par_balanced_copied_bytes = 0
+# if MIN_VERSION_base(4,12,0)
+    , init_cpu_ns                          = 0
+    , init_elapsed_ns                      = 0
+# endif
+# endif
+    , mutator_cpu_ns                       = 0
+    , mutator_elapsed_ns                   = 0
+    , gc_cpu_ns                            = 0
+    , gc_elapsed_ns                        = 0
+    , cpu_ns                               = 0
+    , elapsed_ns                           = 0
+    , gc                                   = emptyGCDetails
+    }
+
+emptyGCDetails :: Stats.GCDetails
+emptyGCDetails = Stats.GCDetails
+    { gcdetails_gen                       = 0
+    , gcdetails_threads                   = 0
+    , gcdetails_allocated_bytes           = 0
+    , gcdetails_live_bytes                = 0
+    , gcdetails_large_objects_bytes       = 0
+    , gcdetails_compact_bytes             = 0
+    , gcdetails_slop_bytes                = 0
+    , gcdetails_mem_in_use_bytes          = 0
+    , gcdetails_copied_bytes              = 0
+    , gcdetails_par_max_copied_bytes      = 0
+# if MIN_VERSION_base(4,11,0)
+    , gcdetails_par_balanced_copied_bytes = 0
+# endif
+    , gcdetails_sync_elapsed_ns           = 0
+    , gcdetails_cpu_ns                    = 0
+    , gcdetails_elapsed_ns                = 0
+    }
+#else
+-- | Get GC statistics.
+getGcStats :: IO Stats.GCStats
+# if MIN_VERSION_base(4,6,0)
+getGcStats = do
+    enabled <- Stats.getGCStatsEnabled
+    if enabled
+        then Stats.getGCStats
+        else return emptyGCStats
+
+-- | Empty GC statistics, as if the application hasn't started yet.
+emptyGCStats :: Stats.GCStats
+emptyGCStats = Stats.GCStats
+    { bytesAllocated         = 0
+    , numGcs                 = 0
+    , maxBytesUsed           = 0
+    , numByteUsageSamples    = 0
+    , cumulativeBytesUsed    = 0
+    , bytesCopied            = 0
+    , currentBytesUsed       = 0
+    , currentBytesSlop       = 0
+    , maxBytesSlop           = 0
+    , peakMegabytesAllocated = 0
+    , mutatorCpuSeconds      = 0
+    , mutatorWallSeconds     = 0
+    , gcCpuSeconds           = 0
+    , gcWallSeconds          = 0
+    , cpuSeconds             = 0
+    , wallSeconds            = 0
+    , parTotBytesCopied      = 0
+    , parMaxBytesCopied      = 0
+    }
+# else
+getGcStats = Stats.getGCStats
+# endif
+
+-- | Helper to work around rename in GHC.Stats in base-4.6.
+gcParTotBytesCopied :: Stats.GCStats -> Int64
+# if MIN_VERSION_base(4,6,0)
+gcParTotBytesCopied = Stats.parTotBytesCopied
+# else
+gcParTotBytesCopied = Stats.parAvgBytesCopied
+# endif
+#endif
+-}
