@@ -13,9 +13,9 @@ import Network.Socket
   , defaultHints
   , defaultProtocol
   , getAddrInfo
-  , recvFrom
   , socket
   )
+import Network.Socket.ByteString (recvFrom)
 import Control.Monad
 import System.Timeout (timeout)
 import Test.Hspec (Spec, describe, expectationFailure, it)
