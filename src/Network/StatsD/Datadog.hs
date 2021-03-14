@@ -53,12 +53,13 @@ module Network.StatsD.Datadog (
   HasStatus(..),
   HasMessage(..),
   -- * Dummy client
-  StatsClient(Dummy)
+  StatsClient(Dummy),
+  MetricLargerThanBufferSizeException
 ) where
 import Control.Applicative ((<$>))
 import Control.Exception (SomeException)
 import Control.Lens
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Control.Reaper
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as L
@@ -383,9 +384,14 @@ accumulateStats maxBufSize = go 0 []
     go :: Int -> [ByteString] -> Seq.Seq ByteString -> (L.ByteString, Seq.Seq ByteString)
     go !accum chunks s = case Seq.viewl s of
       Seq.EmptyL -> (finalizeChunks chunks, Seq.empty)
-      (bs Seq.:< rest) -> let newSize = B.length bs + accum in if newSize > maxBufSize
-        then (finalizeChunks chunks, s)
-        else go newSize (bs : chunks) rest
+      (bs Seq.:< rest) ->
+        let newChunkSize = B.length bs
+            newTotalSize = newChunkSize + accum
+         in if newChunkSize > maxBufSize
+            then error "Oversized chunk made it into datadog accumulateStats. Please report this as a bug."
+            else if newTotalSize > maxBufSize
+                 then (finalizeChunks chunks, s)
+                 else go newTotalSize (bs : chunks) rest
 
     finalizeChunks :: [ByteString] -> L.ByteString
     finalizeChunks = L.fromChunks . reverse
@@ -408,7 +414,7 @@ mkStatsClient s = liftIO $ do
             { reaperAction = \stats -> catch (builderAction h (dogStatsSettingsBufferSize s) stats) $ \e ->
                 dogStatsSettingsOnException s e stats
             , reaperDelay = dogStatsSettingsMaxDelay s
-            , reaperCons = \item work -> work Seq.|> runUtf8Builder item
+            , reaperCons = \item work -> work Seq.|> item
             , reaperNull = Seq.null
             , reaperEmpty = Seq.empty
             }
@@ -431,7 +437,7 @@ withDogStatsD s = bracket (mkStatsClient s) finalizeStatsClient
 -- | Note that Dummy is not the only constructor, just the only publicly available one.
 data StatsClient = StatsClient
                    { statsClientHandle :: !Handle
-                   , statsClientReaper :: Reaper (Seq.Seq ByteString) (Utf8Builder ())
+                   , statsClientReaper :: Reaper (Seq.Seq ByteString) ByteString
                    , statsClientSettings :: DogStatsSettings
                    }
                  | Dummy -- ^ Just drops all stats.
@@ -446,8 +452,18 @@ data StatsClient = StatsClient
 -- >   send client $ metric "wombat.force_count" Gauge (9001 :: Int)
 -- >   send client $ serviceCheck "Wombat Radar" ServiceOk
 send :: (MonadIO m, ToStatsD v) => StatsClient -> v -> m ()
-send StatsClient {statsClientReaper} v =
-  liftIO $ reaperAdd statsClientReaper (toStatsD v >> appendChar7 '\n')
+send StatsClient {statsClientReaper, statsClientSettings} v = do
+  let bytes = runUtf8Builder (toStatsD v >> appendChar7 '\n')
+      bytesSize = B.length bytes
+      maxBufSize = dogStatsSettingsBufferSize statsClientSettings
+
+  when (bytesSize > maxBufSize) $ throwIO $
+    MetricLargerThanBufferSizeException
+      { metricSize = bytesSize
+      , maxBufferSize = maxBufSize
+      }
+
+  liftIO $ reaperAdd statsClientReaper bytes
 send Dummy _ = return ()
 {-# INLINEABLE send #-}
 
@@ -458,3 +474,11 @@ finalizeStatsClient (StatsClient h r s) = liftIO $ do
   void $ builderAction h (dogStatsSettingsBufferSize s) remainingStats
   hClose h
 finalizeStatsClient Dummy = return ()
+
+data MetricLargerThanBufferSizeException =
+  MetricLargerThanBufferSizeException
+    { metricSize :: Int
+    , maxBufferSize :: Int
+    } deriving (Show, Typeable)
+
+instance Exception MetricLargerThanBufferSizeException
