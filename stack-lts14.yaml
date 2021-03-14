@@ -2,5 +2,5 @@ flags: {}
 extra-package-dbs: []
 packages:
 - '.'
-resolver: lts-16.26
+resolver: lts-14.12
 extra-deps: []
