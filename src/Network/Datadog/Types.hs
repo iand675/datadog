@@ -220,8 +220,9 @@ data Metric = Metric
   , metricPoints :: MetricPoints
   , metricHost   :: Maybe Text
   , metricTags   :: [Text]
+  , metricInterval :: Maybe Integer
   }
- 
+
 -- | Each monitor is of a specific type, which determines what sort of check
 -- the monitor performs.
 data MonitorType = MetricAlert

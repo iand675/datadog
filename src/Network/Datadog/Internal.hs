@@ -263,8 +263,9 @@ instance ToJSON MetricPoints where
   toJSON (Counter ps) = toJSON $ fmap (first Timestamp) ps
 
 instance ToJSON Metric where
-  toJSON m = object ks
+  toJSON m = object (g ks)
     where
+      g = maybe id (\x y -> ("interval" .= x) : y) $ metricInterval m
       f = maybe id (\x y -> ("host" .= x) : y) $ metricHost m
       ks = f [ "metric" .= metricName m
              , "points" .= metricPoints m
