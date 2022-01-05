@@ -21,6 +21,8 @@ cache:
 env:
   - STACK_YAML="stack-lts11.yaml"
   - STACK_YAML="stack-lts14.yaml"
+  - STACK_YAML="stack-lts16.yaml"
+  - STACK_YAML="stack-lts18-aeson2.yaml"
   - STACK_YAML="stack.yaml"
   - ARGS="--resolver lts"
   - ARGS="--resolver nightly"
