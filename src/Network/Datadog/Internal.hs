@@ -19,25 +19,26 @@ import Control.Arrow (first)
 import Control.Exception
 import Control.Lens hiding ((.=), cons)
 
-import Data.Aeson hiding (Series, Success, Error)
+import Data.Aeson hiding (Error, Series, Success)
 import Data.Aeson.Types (modifyFailure, typeMismatch)
-import qualified Data.ByteString.Lazy as LBS (ByteString, empty)
-import qualified Data.DList as D
-import qualified Data.HashMap.Strict as HM
 import Data.Maybe
-import Data.Text (Text, pack, append, splitAt, findIndex, cons)
-import Data.Text.Lazy (unpack)
+import Data.Text (Text, append, cons, findIndex, pack, splitAt)
 import Data.Text.Encoding (encodeUtf8)
+import Data.Text.Lazy (unpack)
 import Data.Text.Lazy.Encoding (decodeUtf8)
 import Data.Time.Clock
 import Data.Time.Clock.POSIX
 import Data.Vector ((!?))
+import qualified Data.Aeson.KeyMap as KM
+import qualified Data.ByteString.Lazy as LBS (ByteString, empty)
+import qualified Data.DList as D
+import qualified Data.HashMap.Strict as HM
 
 import Network.HTTP.Client hiding (host)
 import Network.HTTP.Types
 
-import Network.Datadog.Types
 import Network.Datadog.Lens
+import Network.Datadog.Types
 import Prelude hiding (splitAt)
 
 prependMaybe :: (a -> b) -> Maybe a -> [b] -> [b]
@@ -144,7 +145,7 @@ instance FromJSON CheckResult where
   parseJSON a = modifyFailure ("CheckResult: " ++) $ typeMismatch "Object" a
 
 instance ToJSON Downtime where
-  toJSON downtime = Object $ HM.insert "id" (toJSON $ downtime ^. id') basemap
+  toJSON downtime = Object $ KM.insert "id" (toJSON $ downtime ^. id') basemap
     where (Object basemap) = toJSON (downtime ^. spec)
 
 instance FromJSON Downtime where
@@ -232,7 +233,7 @@ instance FromJSON EventSpec where
   parseJSON a = modifyFailure ("EventSpec: " ++) $ typeMismatch "Object" a
 
 instance ToJSON Event where
-  toJSON event = Object $ HM.insert "id" (toJSON (event ^. id')) basemap
+  toJSON event = Object $ KM.insert "id" (toJSON (event ^. id')) basemap
     where (Object basemap) = toJSON (event ^. details)
 
 instance FromJSON Event where
@@ -289,7 +290,7 @@ instance FromJSON MonitorType where
   parseJSON a = modifyFailure ("MonitorType: " ++) $ typeMismatch "String" a
 
 instance ToJSON MonitorOptions where
-  toJSON opts = Object $ HM.fromList [ ("silenced", toJSON (opts ^. silenced))
+  toJSON opts = Object $ KM.fromList [ ("silenced", toJSON (opts ^. silenced))
                                      , ("notify_no_data", Bool (opts ^. notifyNoData))
                                      , ("no_data_timeframe", maybe Null (Number . fromIntegral) (opts ^. noDataTimeframe))
                                      , ("timeout_h", maybe Null (Number . fromIntegral) (opts ^. timeoutH))
@@ -311,7 +312,7 @@ instance FromJSON MonitorOptions where
   parseJSON a = modifyFailure ("MonitorOptions: " ++) $ typeMismatch "Object" a
 
 instance ToJSON MonitorSpec where
-  toJSON ms = Object $ HM.insert "options" (toJSON (ms ^. options)) hmap
+  toJSON ms = Object $ KM.insert "options" (toJSON (ms ^. options)) hmap
     where (Object hmap) = object $
                           prependMaybe ("name" .=) (ms ^. name) $
                           prependMaybe ("message" .=) (ms ^. message)
@@ -356,7 +357,7 @@ instance FromJSON MonitorSpec where
   parseJSON a = modifyFailure ("MonitorSpec: " ++) $ typeMismatch "Object" a
 
 instance ToJSON Monitor where
-  toJSON monitor = Object $ HM.insert "id" (toJSON (monitor ^. id')) basemap
+  toJSON monitor = Object $ KM.insert "id" (toJSON (monitor ^. id')) basemap
     where (Object basemap) = toJSON (monitor ^. spec)
 
 instance FromJSON Monitor where
