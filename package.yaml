@@ -45,7 +45,7 @@ ghc-options:
   - -O2
 
 dependencies:
-  - aeson
+  - aeson >= 2.0 && < 3.0
   - auto-update
   - base >= 4.7 && < 5
   - buffer-builder
